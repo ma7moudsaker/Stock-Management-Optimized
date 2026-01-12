@@ -1,0 +1,11 @@
+stock_management.db
+.git
+.gitignore
+README.md
+.env
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
