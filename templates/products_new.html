@@ -1,0 +1,605 @@
+{% extends "base.html" %}
+
+{% block title %}Products - Stock Management{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Placeholder for lazy-loading images */
+        .color-image.lazy {
+            background-color: #f0f0f0;
+        }
+
+        .color-image {
+            width: 35px;
+            height: 35px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 2px solid #ddd;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .color-image:hover {
+            transform: scale(1.1);
+            border-color: #007bff;
+            box-shadow: 0 2px 8px rgba(0,123,255,0.3);
+        }
+        .color-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 6px;
+            padding: 4px;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+        }
+        .color-item:hover {
+            background-color: #f8f9fa;
+        }
+        .no-image-placeholder {
+            width: 35px;
+            height: 35px;
+            background: linear-gradient(45deg, #f0f0f0 25%, transparent 25%), 
+                        linear-gradient(-45deg, #f0f0f0 25%, transparent 25%), 
+                        linear-gradient(45deg, transparent 75%, #f0f0f0 75%), 
+                        linear-gradient(-45deg, transparent 75%, #f0f0f0 75%);
+            background-size: 8px 8px;
+            background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: #999;
+            cursor: help;
+        }
+        .product-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 5px;
+        }
+        .product-size {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: 500;
+        }
+        /* Hide Load More button by default */
+        #loadMoreBtn {
+            display: none;
+        }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Header with Search -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <h1>📋 Products Inventory</h1>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="d-flex gap-2">
+                            <input type="text" class="form-control" id="searchInput" 
+                                   placeholder="🔍 Search by code, brand, color, size, tags..." 
+                                   value="{{ search_term if search_term else '' }}">
+                            <a href="/add_product_new" class="btn btn-primary">➕ Add Product</a>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Search Results Info -->
+                <div id="searchInfo" class="mb-3" style="display: none;">
+                    <div class="alert alert-info">
+                        <span id="searchResultsText"></span>
+                        <button type="button" class="btn btn-sm btn-outline-secondary ms-2" onclick="clearSearch()">Clear Search</button>
+                    </div>
+                </div>
+                
+                <!-- Products Grid -->
+                <div id="productsContainer">
+                    {% if products %}
+                                       <!-- Summary Stats -->
+                    <div class="row mt-4">
+                        <div class="col-md-12">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <div class="row text-center">
+                                        <div class="col-md-3">
+                                            <h4 class="text-primary">{{ products|length }}</h4>
+                                            <small class="text-muted">Total Products</small>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <h4 class="text-success">{{ products|sum(attribute=11) or 0 }}</h4>
+                                            <small class="text-muted">Total Stock</small>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <h4 class="text-info">{{ (products|selectattr(11, 'greaterthan', 0)|list)|length }}</h4>
+                                            <small class="text-muted">In Stock</small>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <h4 class="text-warning">{{ (products|selectattr(11, 'equalto', 0)|list)|length }}</h4>
+                                            <small class="text-muted">Out of Stock</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                
+                    <div class="row" id="productsGrid">
+                        {% for product in products %}
+                        <div class="col-md-6 col-lg-4 mb-3 product-card">
+                            <div class="card h-100 shadow-sm">
+                                <!-- Card Header -->
+                                <div class="card-header d-flex justify-content-between align-items-center bg-light">
+                                    <div>
+                                        <span class="badge bg-info">{{ product[4] }}</span>
+                                        <small class="text-muted ms-2">{{ product[2] }}</small>
+                                        {% if product[5] %}
+                                            <span class="product-size ms-2">{{ product[5] }}</span>
+                                        {% endif %}
+                                    </div>
+                                    <small class="text-muted">#{{ product[1] }}</small>
+                                </div>
+                                
+                                <!-- Card Body -->
+                                <div class="card-body">
+                                    <h6 class="card-title text-primary">
+                                        {{ product[2] }} {{ product[3] }} {{ product[4] }}- {{ product[1] }}
+                                    </h6>
+                                    
+                                    <!-- Stock and Pricing Info -->
+                                    <div class="row mb-2">
+                                        <div class="col-6">
+                                            <small class="text-muted">Total Stock:</small><br>
+                                            {% if product[11] and product[11] > 0 %}
+                                                <span class="badge bg-success fs-6">{{ product[11] }} pcs</span>
+                                            {% else %}
+                                                <span class="badge bg-danger fs-6">Out of Stock</span>
+                                            {% endif %}
+                                        </div>
+                                        <div class="col-6">
+                                            <small class="text-muted">Wholesale:</small><br>
+                                            <strong class="text-success">{{ "%.0f"|format(product[6]|float) }} EGP</strong>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Colors with Images and Stock -->
+                                    <div class="row mb-2">
+                                        <div class="col-12">
+                                            <small class="text-muted">Colors & Stock:</small><br>
+                                            {% if product[10] %}
+                                                {% for color in product[10] %}
+                                                    <div class="color-item">
+                                                        {% if color.image_url %}
+                                                            <!-- MODIFIED FOR LAZY LOAD -->
+                                                            <img data-src="{{ color.image_url }}" 
+                                                                 src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=="
+                                                                 alt="{{ color.name }}" 
+                                                                 class="color-image me-2 lazy"
+                                                                 onclick="openImageInNewTab('{{ color.image_url }}')"
+                                                                 title="Click to view full size - {{ color.name }}">
+                                                        {% else %}
+                                                            <div class="no-image-placeholder me-2" title="No image for {{ color.name }}">
+                                                                📷
+                                                            </div>
+                                                        {% endif %}
+                                                        <span class="badge bg-secondary me-2" style="font-size: 0.7em;">{{ color.name }}</span>
+                                                        {% if color.stock > 0 %}
+                                                            <span class="badge bg-success" style="font-size: 0.65em;">{{ color.stock }} pcs</span>
+                                                        {% else %}
+                                                            <span class="badge bg-danger" style="font-size: 0.65em;">Out</span>
+                                                        {% endif %}
+                                                    </div>
+                                                {% endfor %}
+                                            {% else %}
+                                                <small class="text-muted">No colors</small>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Pricing and Profit -->
+                                    <div class="row mb-2">
+                                        <div class="col-6">
+                                            <small class="text-muted">Retail:</small><br>
+                                            <strong class="text-primary">{{ "%.0f"|format(product[7]|float) }} EGP</strong>
+                                        </div>
+                                        <div class="col-6">
+                                            <small class="text-muted">Profit:</small><br>
+                                            {% set profit = product[7]|float - product[6]|float %}
+                                            {% set margin = (profit / product[7]|float * 100) if product[7]|float > 0 else 0 %}
+                                            <small class="text-info">{{ "%.0f"|format(profit) }} EGP ({{ "%.1f"|format(margin) }}%)</small>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Product Tags -->
+                                    {% if product[12] %}
+                                    <div class="row">
+                                        <div class="col-12">
+                                            <small class="text-muted">Tags:</small>
+                                            <div class="product-tags">
+                                                {% for tag in product[12] %}
+                                                    <span class="badge" style="background-color: {{ tag[3] }}; color: white; font-size: 0.65em;">
+                                                        {{ tag[1] }}
+                                                    </span>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                    
+                                </div>
+                                
+                                <!-- Card Footer -->
+                                <div class="card-footer bg-white">
+                                    <div class="d-grid gap-1">
+                                        <div class="btn-group" role="group">
+                                            <a href="/product_details/{{ product[0] }}" class="btn btn-outline-primary btn-sm">
+                                                👁️ Details
+                                            </a>
+                                            <button type="button" class="btn btn-outline-success btn-sm" 
+                                                    onclick="quickStock({{ product[0] }})">
+                                                📦 Stock
+                                            </button>
+                                            <button type="button" class="btn btn-outline-danger btn-sm" 
+                                                    onclick="deleteProduct({{ product[0] }}, '{{ product[1] }}')">
+                                                🗑️ Delete
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <small class="text-muted d-block mt-1 text-center">
+                                        Added: {{ product[9][:10] if product[9] else 'N/A' }}
+                                    </small>
+                                </div>
+
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    
+                    <!-- NEW: Load More Button -->
+                    <div class="text-center mt-4">
+                        <button id="loadMoreBtn" class="btn btn-outline-primary">Load More Products</button>
+                    </div>
+
+                    {% else %}
+                    <div class="text-center py-5">
+                        <div class="mb-4">
+                            <i class="fas fa-box-open fa-5x text-muted"></i>
+                        </div>
+                        <h3>No products found</h3>
+                        {% if search_term %}
+                        <p class="text-muted">No products match your search: "<strong>{{ search_term }}</strong>"</p>
+                        <button class="btn btn-outline-secondary" onclick="clearSearch()">Clear Search</button>
+                        {% else %}
+                        <p class="text-muted">Start by adding your first product to the inventory!</p>
+                        {% endif %}
+                        <a href="/add_product_new" class="btn btn-primary btn-lg mt-3">➕ Add First Product</a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Confirmation Modal -->
+    <div class="modal fade" id="deleteModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">🗑️ Delete Product</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete product <strong id="deleteProductCode"></strong>?</p>
+                    <p class="text-danger"><small>This action cannot be undone and will remove all stock data, images, and tags!</small></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <form id="deleteForm" method="POST" style="display: inline;">
+                        <button type="submit" class="btn btn-danger">Delete Product</button>
+                    </form>
+                </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    
+    // === LAZY LOADING FOR IMAGES ===
+    let lazyImageObserver;
+    
+    function initializeLazyObserver() {
+        // إلغاء الـ Observer القديم لو موجود
+        if (lazyImageObserver) {
+            lazyImageObserver.disconnect();
+        }
+        
+        const lazyImages = [].slice.call(document.querySelectorAll('img.lazy'));
+        
+        if ('IntersectionObserver' in window) {
+            lazyImageObserver = new IntersectionObserver(function(entries, observer) {
+                entries.forEach(function(entry) {
+                    if (entry.isIntersecting) {
+                        let lazyImage = entry.target;
+                        lazyImage.src = lazyImage.dataset.src;
+                        lazyImage.classList.remove('lazy');
+                        lazyImageObserver.unobserve(lazyImage);
+                    }
+                });
+            });
+            
+            lazyImages.forEach(function(lazyImage) {
+                lazyImageObserver.observe(lazyImage);
+            });
+        } else {
+            // Fallback للمتصفحات القديمة
+            lazyImages.forEach(function(lazyImage) {
+                lazyImage.src = lazyImage.dataset.src;
+                lazyImage.classList.remove('lazy');
+            });
+        }
+    }
+    
+    // تشغيل الـ Lazy Loading أول مرة
+    initializeLazyObserver();
+    
+    // === LOAD MORE FUNCTIONALITY ===
+    const productsGrid = document.getElementById('productsGrid');
+    if (productsGrid) {
+        const productCards = productsGrid.getElementsByClassName('product-card');
+        const loadMoreBtn = document.getElementById('loadMoreBtn');
+        const itemsPerLoad = 9;
+        let visibleItems = itemsPerLoad;
+        
+        // إخفاء الـ cards الزيادة
+        for (let i = itemsPerLoad; i < productCards.length; i++) {
+            productCards[i].style.display = 'none';
+        }
+        
+        // إظهار الزرار لو فيه منتجات أكتر
+        if (productCards.length > itemsPerLoad) {
+            loadMoreBtn.style.display = 'inline-block';
+        }
+        
+        loadMoreBtn.addEventListener('click', function() {
+            const nextVisibleItems = visibleItems + itemsPerLoad;
+            for (let i = visibleItems; i < nextVisibleItems && i < productCards.length; i++) {
+                productCards[i].style.display = 'block';
+            }
+            visibleItems = nextVisibleItems;
+            
+            // إخفاء الزرار لو خلصنا
+            if (visibleItems >= productCards.length) {
+                loadMoreBtn.style.display = 'none';
+            }
+            
+            // إعادة تشغيل Lazy Loading للصور الجديدة
+            initializeLazyObserver();
+        });
+    }
+    
+    // === LIVE SEARCH FUNCTIONALITY ===
+    let searchTimeout;
+    const searchInput = document.getElementById('searchInput');
+    const searchInfo = document.getElementById('searchInfo');
+    const searchResultsText = document.getElementById('searchResultsText');
+    const productsContainer = document.getElementById('productsContainer');
+    
+    searchInput.addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        const searchTerm = this.value.trim();
+        
+        searchTimeout = setTimeout(() => {
+            if (searchTerm.length > 0) {
+                performSearch(searchTerm);
+            } else {
+                clearSearch();
+            }
+        }, 300);
+    });
+    
+    function performSearch(searchTerm) {
+        fetch(`/search_products?q=${encodeURIComponent(searchTerm)}`)
+            .then(response => response.json())
+            .then(data => {
+                updateProductsDisplay(data.products, searchTerm);
+            })
+            .catch(error => {
+                console.error('Search error:', error);
+            });
+    }
+    
+    function updateProductsDisplay(products, searchTerm) {
+        searchInfo.style.display = 'block';
+        searchResultsText.textContent = `Found ${products.length} product(s) for "${searchTerm}"`;
+        
+            if (products.length > 0) {
+                // حساب الإحصائيات أولاً
+                const totalStock = products.reduce((sum, p) => sum + (p.total_stock || 0), 0);
+                const inStock = products.filter(p => (p.total_stock || 0) > 0).length;
+                const outOfStock = products.filter(p => (p.total_stock || 0) === 0).length;
+                
+                // بداية الـ HTML بالإحصائيات فوق
+                let html = `
+                    <div class="row mb-4">
+                        <div class="col-md-12">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <div class="row text-center">
+                                        <div class="col-md-3"><h4 class="text-primary">${products.length}</h4><small class="text-muted">Found Products</small></div>
+                                        <div class="col-md-3"><h4 class="text-success">${totalStock}</h4><small class="text-muted">Total Stock</small></div>
+                                        <div class="col-md-3"><h4 class="text-info">${inStock}</h4><small class="text-muted">In Stock</small></div>
+                                        <div class="col-md-3"><h4 class="text-warning">${outOfStock}</h4><small class="text-muted">Out of Stock</small></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // بعدين الـ Products
+                html += '<div class="row" id="productsGrid">';
+                products.forEach(product => {
+                    html += createProductCard(product);
+                });
+                html += '</div>';
+
+            productsContainer.innerHTML = html;
+            
+            // 🔥 إعادة تشغيل Lazy Loading بعد تحديث الصفحة
+            setTimeout(() => {
+                initializeLazyObserver();
+            }, 100);
+            
+        } else {
+            productsContainer.innerHTML = `
+                <div class="text-center py-5">
+                    <div class="mb-4"><i class="fas fa-search fa-5x text-muted"></i></div>
+                    <h3>No products found</h3>
+                    <p class="text-muted">No products match your search "<strong>${searchTerm}</strong>"</p>
+                    <button class="btn btn-outline-secondary" onclick="clearSearch()">Clear Search</button>
+                    <a href="/add_product_new" class="btn btn-primary btn-lg mt-3">Add New Product</a>
+                </div>
+            `;
+        }
+    }
+    
+    function createProductCard(product) {
+        const stockBadge = (product.total_stock && product.total_stock > 0) 
+            ? `<span class="badge bg-success fs-6">${product.total_stock} pcs</span>` 
+            : `<span class="badge bg-danger fs-6">Out of Stock</span>`;
+        
+        // معالجة الألوان مع الصور
+        let colorsHtml = '';
+        if (product.colors_data && product.colors_data.length > 0) {
+            product.colors_data.forEach(color => {
+                const colorStockBadge = (color.stock > 0) 
+                    ? `<span class="badge bg-success" style="font-size: 0.65em;">${color.stock} pcs</span>` 
+                    : `<span class="badge bg-danger" style="font-size: 0.65em;">Out</span>`;
+                
+                const imageHtml = color.image_url 
+                    ? `<img data-src="${color.image_url}" 
+                            src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAAAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==" 
+                            alt="${color.name}" 
+                            class="color-image me-2 lazy" 
+                            onclick="openImageInNewTab('${color.image_url}')" 
+                            title="Click to view full size - ${color.name}">`
+                    : `<div class="no-image-placeholder me-2" title="No image for ${color.name}">📷</div>`;
+                
+                colorsHtml += `
+                    <div class="color-item">
+                        ${imageHtml}
+                        <span class="badge bg-secondary me-2" style="font-size: 0.7em;">${color.name}</span>
+                        ${colorStockBadge}
+                    </div>
+                `;
+            });
+        } else {
+            colorsHtml = `<small class="text-muted">No colors</small>`;
+        }
+        
+        // معالجة Tags
+        let tagsHtml = '';
+        if (product.tags && product.tags.length > 0) {
+            tagsHtml = `
+                <div class="row">
+                    <div class="col-12">
+                        <small class="text-muted">Tags</small>
+                        <div class="product-tags">
+                            ${product.tags.map(tag => `<span class="badge" style="background-color: ${tag.color}; color: white; font-size: 0.65em;">${tag.name}</span>`).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        const profit = (product.retail || 0) - (product.wholesale || 0);
+        const margin = product.retail > 0 ? ((profit / product.retail) * 100).toFixed(1) : 0;
+        const sizeHtml = product.size ? `<span class="product-size ms-2">${product.size}</span>` : '';
+        
+        return `
+            <div class="col-md-6 col-lg-4 mb-3 product-card">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-header d-flex justify-content-between align-items-center bg-light">
+                        <div>
+                            <span class="badge bg-info">${product.category}</span>
+                            <small class="text-muted ms-2">${product.brand}</small>
+                            ${sizeHtml}
+                        </div>
+                        <small class="text-muted">${product.code}</small>
+                    </div>
+                    <div class="card-body">
+                        <h6 class="card-title text-primary">${product.brand} ${product.type} ${product.category}-${product.code}</h6>
+                        
+                        <div class="row mb-2">
+                            <div class="col-6">
+                                <small class="text-muted">Total Stock</small><br>
+                                ${stockBadge}
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">Wholesale</small><br>
+                                <strong class="text-success">${Math.round(product.wholesale)} EGP</strong>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-2">
+                            <div class="col-12">
+                                <small class="text-muted">Colors & Stock</small><br>
+                                ${colorsHtml}
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-2">
+                            <div class="col-6">
+                                <small class="text-muted">Retail</small><br>
+                                <strong class="text-primary">${Math.round(product.retail)} EGP</strong>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">Profit</small><br>
+                                <small class="text-info">${Math.round(profit)} EGP (${margin}%)</small>
+                            </div>
+                        </div>
+                        
+                        ${tagsHtml}
+                    </div>
+                    <div class="card-footer bg-white">
+                        <div class="d-grid gap-1">
+                            <div class="btn-group" role="group">
+                                <a href="/product_details/${product.id}" class="btn btn-outline-primary btn-sm">Details</a>
+                                <button type="button" class="btn btn-outline-success btn-sm" onclick="quickStock(${product.id})">Stock</button>
+                                <button type="button" class="btn btn-outline-danger btn-sm" onclick="deleteProduct(${product.id}, '${product.code}')">Delete</button>
+                            </div>
+                        </div>
+                        <small class="text-muted d-block mt-1 text-center">Added: ${product.created || 'N/A'}</small>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // تعريف الـ functions كـ global
+    window.clearSearch = function() {
+        searchInput.value = '';
+        searchInfo.style.display = 'none';
+        window.location.href = '/products_new';
+    };
+    
+    window.deleteProduct = function(productId, productCode) {
+        document.getElementById('deleteProductCode').textContent = productCode;
+        document.getElementById('deleteForm').action = `/delete_product/${productId}`;
+        new bootstrap.Modal(document.getElementById('deleteModal')).show();
+    };
+    
+    window.quickStock = function(productId) {
+        alert('Quick stock management coming soon!');
+    };
+    
+    window.openImageInNewTab = function(imageUrl) {
+        window.open(imageUrl, '_blank');
+    };
+});
+</script>
+{% endblock %}

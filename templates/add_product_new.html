@@ -1,0 +1,400 @@
+{% extends "base.html" %}
+
+{% block title %}Add Product - Stock Management{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1>➕ Add New Product</h1>
+                    <div>
+                        <a href="{{ url_for('add_products_multi') }}" class="btn btn-outline-info me-2">➕➕ Add Multiple</a>
+                        <a href="{{ url_for('products_new') }}" class="btn btn-outline-secondary">📋 View All Products</a>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h5>📝 Product Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" id="productForm">
+                            <!-- Basic Product Information -->
+                            <div class="row">
+                                <!-- Product Code -->
+                                <div class="col-md-2">
+                                    <div class="mb-3">
+                                        <label for="product_code" class="form-label">Product Code</label>
+                                        <input type="text" class="form-control" id="product_code" name="product_code" placeholder="96115" required>
+                                        <small class="text-muted">Numeric code only</small>
+                                    </div>
+                                </div>
+
+                                <!-- Brand -->
+                                <div class="col-md-2">
+                                    <div class="mb-3">
+                                        <label for="brand_id" class="form-label">Brand</label>
+                                        <select class="form-control" id="brand_id" name="brand_id" required>
+                                            <option value="">Select Brand</option>
+                                            {% for brand in brands %}
+                                                <option value="{{ brand.0 }}">{{ brand.1 }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Product Type -->
+                                <div class="col-md-2">
+                                    <div class="mb-3">
+                                        <label for="product_type_id" class="form-label">Type</label>
+                                        <select class="form-control" id="product_type_id" name="product_type_id" required>
+                                            <option value="">Select Type</option>
+                                            {% for ptype in product_types %}
+                                                <option value="{{ ptype.0 }}">{{ ptype.1 }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Trader Category -->
+                                <div class="col-md-2">
+                                    <div class="mb-3">
+                                        <label for="trader_category" class="form-label">Category</label>
+                                        <select class="form-control" id="trader_category" name="trader_category" required>
+                                            <option value="">Select Category</option>
+                                            {% for cat in trader_categories %}
+                                                <option value="{{ cat.1 }}">{{ cat.1 }} - {{ cat.2 }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Product Size -->
+                                <div class="col-md-2">
+                                    <div class="mb-3">
+                                        <label for="product_size" class="form-label">Size</label>
+                                        <input type="text" class="form-control" id="product_size" name="product_size" placeholder="20×22×5" pattern="[0-9×x ]+" title="Use format: 20×22×5 or 15×22">
+                                        <small class="text-muted">e.g., 20×22×5</small>
+                                    </div>
+                                </div>
+
+                                <!-- Initial Stock -->
+                                <div class="col-md-2">
+                                    <div class="mb-3">
+                                        <label for="initial_stock" class="form-label">Initial Stock</label>
+                                        <input type="number" class="form-control" id="initial_stock" name="initial_stock" value="0" min="0">
+                                        <small class="text-muted">Per color</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Pricing -->
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label for="wholesale_price" class="form-label">Wholesale Price (EGP)</label>
+                                        <input type="number" step="0.01" class="form-control" id="wholesale_price" name="wholesale_price" placeholder="1000.00" required>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label for="retail_price" class="form-label">Retail Price (EGP)</label>
+                                        <input type="number" step="0.01" class="form-control" id="retail_price" name="retail_price" placeholder="1500.00" required>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label class="form-label">Profit Margin</label>
+                                        <div class="form-control bg-light" id="profitDisplay">
+                                            <span id="profitAmount">0 EGP</span> (<span id="profitPercentage">0%</span>)
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label class="form-label">Product Preview</label>
+                                        <div class="form-control bg-light" id="productCodePreview">
+                                            <small class="text-muted">Fill form to see preview</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tags Selection -->
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <div class="mb-3">
+                                        <label class="form-label">Product Tags (Optional)</label>
+                                        <div class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
+                                            <div class="row">
+                                                {% for tag in tags %}
+                                                    <div class="col-md-3 mb-2">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" value="{{ tag.0 }}" id="tag_{{ tag.0 }}" name="tag_ids">
+                                                            <label class="form-check-label d-flex align-items-center" for="tag_{{ tag.0 }}">
+                                                                <span class="badge me-2" style="background-color: {{ tag.3 }}; color: white;">{{ tag.1 }}</span>
+                                                                <small class="text-muted">{{ tag.2 }}</small>
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                        <small class="text-muted">Select relevant tags for this product (size, status, material, etc.)</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Colors and Images Selection -->
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <div class="mb-3">
+                                        <label class="form-label">Colors & Images * (Select colors and add image URLs)</label>
+                                        <div class="border rounded p-3" style="max-height: 500px; overflow-y: auto;">
+                                            <div class="row" id="colorsContainer">
+                                                {% for color in colors %}
+                                                    <div class="col-md-6 mb-3">
+                                                        <div class="card border-light">
+                                                            <div class="card-body p-3">
+                                                                <!-- Color Checkbox -->
+                                                                <div class="form-check mb-2">
+                                                                    <input class="form-check-input" type="checkbox" value="{{ color.0 }}" id="color_{{ color.0 }}" name="color_ids" onchange="toggleImageUpload('{{ color.0 }}')">
+                                                                    <label class="form-check-label d-flex align-items-center" for="color_{{ color.0 }}">
+                                                                        <div style="width: 25px; height: 25px; background-color: {{ color.2 }}; border: 2px solid #ccc; border-radius: 4px; margin-right: 10px;"></div>
+                                                                        <strong>{{ color.1 }}</strong>
+                                                                    </label>
+                                                                </div>
+
+                                                                <!-- Image URL Input -->
+                                                                <div class="image-upload-section" id="upload_{{ color.0 }}" style="display: none;">
+                                                                    <label for="color_image_url_{{ color.0 }}" class="form-label">{{ color.1 }} Image URL</label>
+                                                                    <input type="url" class="form-control form-control-sm" id="color_image_url_{{ color.0 }}" name="color_image_url_{{ color.0 }}" placeholder="https://cdn.shopify.com/s/files/..." oninput="previewImage('{{ color.0 }}', this)">
+                                                                    <small class="text-muted">Paste the direct image URL from Shopify</small>
+
+                                                                    <!-- Image Preview -->
+                                                                    <div class="mt-2" id="preview_{{ color.0 }}" style="display: none;">
+                                                                        <img id="img_{{ color.0 }}" src="" alt="Preview" style="max-width: 120px; max-height: 120px; border-radius: 8px; border: 2px solid #ddd;">
+                                                                        <div class="mt-1">
+                                                                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeImage('{{ color.0 }}')">🗑️ Remove</button>
+                                                                            <button type="button" class="btn btn-sm btn-outline-info" onclick="viewImageFullSize('{{ color.0 }}')">🔍 View Full</button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                        <small class="text-muted">Select colors and add image URL for each. Images should show the handbag in that specific color.</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Submit Buttons -->
+                            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                <button type="button" class="btn btn-secondary me-md-2" onclick="resetForm()">🔄 Reset Form</button>
+                                <button type="button" class="btn btn-info me-md-2" onclick="previewProduct()">👁️ Preview Product</button>
+                                <button type="submit" class="btn btn-primary">✅ Add Product</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Preview Modal -->
+    <div class="modal fade" id="productPreviewModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Product Preview</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="previewModalContent">
+                    <!-- Preview content will be generated here -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" onclick="submitFormFromPreview()">Add Product</button>
+                </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleImageUpload(colorId) {
+            const checkbox = document.getElementById('color_' + colorId);
+            const uploadSection = document.getElementById('upload_' + colorId);
+            
+            if (checkbox.checked) {
+                uploadSection.style.display = 'block';
+            } else {
+                uploadSection.style.display = 'none';
+                // Clear the URL input and preview
+                document.getElementById('color_image_url_' + colorId).value = '';
+                document.getElementById('preview_' + colorId).style.display = 'none';
+            }
+            
+            updatePreview();
+        }
+
+        function previewImage(colorId, input) {
+            const url = input.value.trim();
+            if (url) {
+                // تجربة تحميل الصورة من الـ URL
+                const img = new Image();
+                img.onload = function() {
+                    document.getElementById('img_' + colorId).src = url;
+                    document.getElementById('preview_' + colorId).style.display = 'block';
+                };
+                img.onerror = function() {
+                    // إخفاء الـ preview فقط بدون alert مزعج
+                    document.getElementById('preview_' + colorId).style.display = 'none';
+                    console.warn('⚠️ Image URL not accessible:', url);
+                };
+                img.src = url;
+            } else {
+                document.getElementById('preview_' + colorId).style.display = 'none';
+            }
+        }
+
+        function removeImage(colorId) {
+            document.getElementById('color_image_url_' + colorId).value = '';
+            document.getElementById('preview_' + colorId).style.display = 'none';
+        }
+
+        function viewImageFullSize(colorId) {
+            const imgSrc = document.getElementById('img_' + colorId).src;
+            if (imgSrc) {
+                window.open(imgSrc, '_blank');
+            }
+        }
+
+        function updatePreview() {
+            const code = document.getElementById('product_code').value;
+            const brand = document.getElementById('brand_id').selectedOptions[0]?.text;
+            const type = document.getElementById('product_type_id').selectedOptions[0]?.text;
+            const category = document.getElementById('trader_category').value;
+            const size = document.getElementById('product_size').value;
+
+            if (code && brand && type && category) {
+                const fullCode = `${brand} ${type} ${category}-${code}`;
+                const sizeText = size ? ` (${size})` : '';
+                document.getElementById('productCodePreview').innerHTML = `<small>${fullCode}${sizeText}</small>`;
+            } else {
+                document.getElementById('productCodePreview').innerHTML = '<small class="text-muted">Fill form to see preview</small>';
+            }
+
+            updateProfitCalculation();
+        }
+
+        function updateProfitCalculation() {
+            const wholesale = parseFloat(document.getElementById('wholesale_price').value) || 0;
+            const retail = parseFloat(document.getElementById('retail_price').value) || 0;
+
+            if (wholesale > 0 && retail > 0) {
+                const profit = retail - wholesale;
+                const percentage = ((profit / retail) * 100).toFixed(1);
+
+                document.getElementById('profitAmount').textContent = `${profit.toFixed(2)} EGP`;
+                document.getElementById('profitPercentage').textContent = `${percentage}%`;
+
+                // Color coding for profit margin
+                const profitDisplay = document.getElementById('profitDisplay');
+                if (percentage < 20) {
+                    profitDisplay.style.backgroundColor = '#f8d7da';
+                } else if (percentage < 40) {
+                    profitDisplay.style.backgroundColor = '#fff3cd';
+                } else {
+                    profitDisplay.style.backgroundColor = '#d1edff';
+                }
+            } else {
+                document.getElementById('profitAmount').textContent = '0 EGP';
+                document.getElementById('profitPercentage').textContent = '0%';
+                document.getElementById('profitDisplay').style.backgroundColor = '#f8f9fa';
+            }
+        }
+
+        function previewProduct() {
+            const code = document.getElementById('product_code').value;
+            const brand = document.getElementById('brand_id').selectedOptions[0]?.text;
+            const type = document.getElementById('product_type_id').selectedOptions[0]?.text;
+            const category = document.getElementById('trader_category').value;
+            const size = document.getElementById('product_size').value;
+            const wholesale = document.getElementById('wholesale_price').value;
+            const retail = document.getElementById('retail_price').value;
+            const stock = document.getElementById('initial_stock').value;
+
+            const selectedColors = Array.from(document.querySelectorAll('input[name="color_ids"]:checked'))
+                .map(cb => cb.nextElementSibling.textContent.trim());
+
+            const selectedTags = Array.from(document.querySelectorAll('input[name="tag_ids"]:checked'))
+                .map(cb => cb.nextElementSibling.textContent.trim());
+
+            let previewHtml = `
+                <div class="row">
+                    <div class="col-md-8">
+                        <h6>Product Information</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>Code</strong></td><td>${code}</td></tr>
+                            <tr><td><strong>Brand</strong></td><td>${brand}</td></tr>
+                            <tr><td><strong>Type</strong></td><td>${type}</td></tr>
+                            <tr><td><strong>Category</strong></td><td>${category}</td></tr>
+                            <tr><td><strong>Size</strong></td><td>${size || 'Not specified'}</td></tr>
+                            <tr><td><strong>Wholesale</strong></td><td>${wholesale} EGP</td></tr>
+                            <tr><td><strong>Retail</strong></td><td>${retail} EGP</td></tr>
+                            <tr><td><strong>Initial Stock</strong></td><td>${stock} per color</td></tr>
+                        </table>
+                        <h6>Colors (${selectedColors.length})</h6>
+                        <p>${selectedColors.join(', ') || 'None selected'}</p>
+                        <h6>Tags (${selectedTags.length})</h6>
+                        <p>${selectedTags.join(', ') || 'None selected'}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6>Full Product Code</h6>
+                        <div class="alert alert-info">
+                            <strong>${brand} ${type} ${category}-${code}</strong>
+                            ${size ? `<br><small>Size: ${size}</small>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('previewModalContent').innerHTML = previewHtml;
+            new bootstrap.Modal(document.getElementById('productPreviewModal')).show();
+        }
+
+        function submitFormFromPreview() {
+            bootstrap.Modal.getInstance(document.getElementById('productPreviewModal')).hide();
+            document.getElementById('productForm').submit();
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const inputs = ['product_code', 'brand_id', 'product_type_id', 'trader_category', 'product_size', 'wholesale_price', 'retail_price'];
+            inputs.forEach(id => {
+                document.getElementById(id).addEventListener('change', updatePreview);
+                document.getElementById(id).addEventListener('input', updatePreview);
+            });
+        });
+
+        function resetForm() {
+            if (confirm('Are you sure you want to reset the entire form?')) {
+                document.getElementById('productForm').reset();
+                document.getElementById('productCodePreview').innerHTML = '<small class="text-muted">Fill form to see preview</small>';
+                document.getElementById('profitDisplay').style.backgroundColor = '#f8f9fa';
+                
+                // Hide all image upload sections
+                document.querySelectorAll('.image-upload-section').forEach(section => {
+                    section.style.display = 'none';
+                });
+                
+                // Hide all previews
+                document.querySelectorAll('[id^="preview_"]').forEach(preview => {
+                    preview.style.display = 'none';
+                });
+            }
+        }
+</script>
+{% endblock %}

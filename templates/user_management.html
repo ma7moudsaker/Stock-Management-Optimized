@@ -1,0 +1,295 @@
+{% extends "base.html" %}
+
+{% block title %}User Management - Stock Management{% endblock %}
+
+{% block extra_css %}
+<style>
+    .user-card {
+        transition: all 0.3s;
+        border: 2px solid #e9ecef;
+    }
+    .user-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+        border-color: #007bff;
+    }
+    .user-card.inactive {
+        opacity: 0.6;
+        background-color: #f8f9fa;
+    }
+    .permissions-section {
+        max-height: 400px;
+        overflow-y: auto;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 15px;
+    }
+    .permission-category {
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 6px;
+        margin-bottom: 15px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>👤 User Management</h1>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addUserModal">
+        ➕ Add New User
+    </button>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body text-center">
+                <h2>{{ users|length }}</h2>
+                <small>Total Users</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body text-center">
+                <h2>{{ users|selectattr('3', 'equalto', 1)|list|length }}</h2>
+                <small>Active Users</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body text-center">
+                <h2>{{ users|selectattr('3', 'equalto', 0)|list|length }}</h2>
+                <small>Inactive Users</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body text-center">
+                <h2>{{ total_pages }}</h2>
+                <small>Available Pages</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Users List -->
+<div class="row">
+    {% for user in users %}
+    <div class="col-md-6 mb-4">
+        <div class="card user-card {% if user[3] == 0 %}inactive{% endif %}">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                        <h5 class="mb-1">{{ user[2] }}</h5>
+                        <small class="text-muted">@{{ user[1] }}</small>
+                    </div>
+                    <div>
+                        {% if user[3] == 1 %}
+                            <span class="badge bg-success">Active</span>
+                        {% else %}
+                            <span class="badge bg-danger">Inactive</span>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <small class="text-muted">
+                        <strong>Permissions:</strong> {{ user[6] }} pages<br>
+                        <strong>Created:</strong> {{ user[4][:10] if user[4] else 'N/A' }}<br>
+                        <strong>Last Login:</strong> {{ user[5][:16] if user[5] else 'Never' }}
+                    </small>
+                </div>
+                
+                <div class="d-grid gap-2">
+                    <button class="btn btn-sm btn-outline-primary" 
+                            onclick="editUser({{ user[0] }}, '{{ user[1] }}', '{{ user[2] }}', {{ user[3] }})">
+                        ✏️ Edit User
+                    </button>
+                    
+                    <form method="POST" action="{{ url_for('toggle_user', user_id=user[0]) }}" style="display: inline;">
+                        <button type="submit" class="btn btn-sm btn-outline-warning w-100">
+                            {% if user[3] == 1 %}
+                                🔒 Deactivate
+                            {% else %}
+                                🔓 Activate
+                            {% endif %}
+                        </button>
+                    </form>
+                    
+                    <form method="POST" action="{{ url_for('delete_user', user_id=user[0]) }}" 
+                          onsubmit="return confirm('Are you sure you want to delete {{ user[2] }}? This action cannot be undone!');"
+                          style="display: inline;">
+                        <button type="submit" class="btn btn-sm btn-outline-danger w-100">
+                            🗑️ Delete User
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Add User Modal -->
+<div class="modal fade" id="addUserModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">➕ Add New User</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('add_user') }}">
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Full Name *</label>
+                            <input type="text" class="form-control" name="full_name" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Username *</label>
+                            <input type="text" class="form-control" name="username" required>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Password *</label>
+                        <input type="password" class="form-control" name="password" required>
+                    </div>
+                    
+                    <hr>
+                    
+                    <h6>📄 Select Accessible Pages:</h6>
+                    <div class="permissions-section">
+                        {% for category, pages in pages_grouped.items() %}
+                        <div class="permission-category">
+                            <h6 class="text-primary">{{ category }}</h6>
+                            {% for page in pages %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" 
+                                       value="{{ page.page_key }}" 
+                                       id="add_{{ page.page_key }}" 
+                                       name="page_keys">
+                                <label class="form-check-label" for="add_{{ page.page_key }}">
+                                    <strong>{{ page.page_name }}</strong>
+                                    <br><small class="text-muted">{{ page.description }}</small>
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add User</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit User Modal -->
+<div class="modal fade" id="editUserModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">✏️ Edit User</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="editUserForm">
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Full Name</label>
+                            <input type="text" class="form-control" name="full_name" id="edit_full_name">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Username</label>
+                            <input type="text" class="form-control" name="username" id="edit_username">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">New Password (leave empty to keep current)</label>
+                        <input type="password" class="form-control" name="password" id="edit_password">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" name="active" id="edit_active">
+                            <option value="1">Active</option>
+                            <option value="0">Inactive</option>
+                        </select>
+                    </div>
+                    
+                    <hr>
+                    
+                    <h6>📄 Select Accessible Pages:</h6>
+                    <div class="permissions-section" id="editPermissionsSection">
+                        {% for category, pages in pages_grouped.items() %}
+                        <div class="permission-category">
+                            <h6 class="text-primary">{{ category }}</h6>
+                            {% for page in pages %}
+                            <div class="form-check">
+                                <input class="form-check-input edit-permission" type="checkbox" 
+                                       value="{{ page.page_key }}" 
+                                       id="edit_{{ page.page_key }}" 
+                                       name="page_keys">
+                                <label class="form-check-label" for="edit_{{ page.page_key }}">
+                                    <strong>{{ page.page_name }}</strong>
+                                    <br><small class="text-muted">{{ page.description }}</small>
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function editUser(userId, username, fullName, active) {
+    // Set form action
+    document.getElementById('editUserForm').action = '/edit_user/' + userId;
+    
+    // Fill form fields
+    document.getElementById('edit_username').value = username;
+    document.getElementById('edit_full_name').value = fullName;
+    document.getElementById('edit_active').value = active;
+    document.getElementById('edit_password').value = '';
+    
+    // Clear all checkboxes first
+    document.querySelectorAll('.edit-permission').forEach(cb => cb.checked = false);
+    
+    // Load user's current permissions
+    fetch('/get_user_permissions/' + userId)
+        .then(response => response.json())
+        .then(permissions => {
+            permissions.forEach(pageKey => {
+                const checkbox = document.getElementById('edit_' + pageKey);
+                if (checkbox) checkbox.checked = true;
+            });
+        })
+        .catch(error => console.error('Error loading permissions:', error));
+    
+    // Show modal
+    new bootstrap.Modal(document.getElementById('editUserModal')).show();
+}
+</script>
+{% endblock %}

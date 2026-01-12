@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}Export Products - Stock Management{% endblock %}
+
+{% block extra_css %}
+<style>
+.filter-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .select2-container {
+            width: 100% !important;
+        }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1>📥 Export Products</h1>
+                    <a href="{{ url_for('products_new') }}" class="btn btn-outline-secondary">📋 View All Products</a>
+                </div>
+
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">🔍 Filter & Export Products</h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" id="exportForm">
+                            <div class="filter-section">
+                                <h6 class="mb-3">📋 Select Filters (Multi-Select)</h6>
+                                
+                                <div class="row">
+                                    <!-- Brands Filter -->
+                                    <div class="col-md-6 mb-3">
+                                        <label for="brands" class="form-label">🏷️ Brands</label>
+                                        <select class="form-control select2-multi" id="brands" name="brands" multiple>
+                                            {% for brand in brands %}
+                                                <option value="{{ brand }}">{{ brand }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <small class="text-muted">Leave empty to select all</small>
+                                    </div>
+
+                                    <!-- Categories Filter -->
+                                    <div class="col-md-6 mb-3">
+                                        <label for="categories" class="form-label">👥 Categories</label>
+                                        <select class="form-control select2-multi" id="categories" name="categories" multiple>
+                                            {% for category in categories %}
+                                                <option value="{{ category }}">{{ category }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <small class="text-muted">Leave empty to select all</small>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <!-- Product Types Filter -->
+                                    <div class="col-md-6 mb-3">
+                                        <label for="product_types" class="form-label">📦 Product Types</label>
+                                        <select class="form-control select2-multi" id="product_types" name="product_types" multiple>
+                                            {% for ptype in product_types %}
+                                                <option value="{{ ptype }}">{{ ptype }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <small class="text-muted">Leave empty to select all</small>
+                                    </div>
+
+                                    <!-- Colors Filter -->
+                                    <div class="col-md-6 mb-3">
+                                        <label for="colors" class="form-label">🎨 Colors</label>
+                                        <select class="form-control select2-multi" id="colors" name="colors" multiple>
+                                            {% for color in colors %}
+                                                <option value="{{ color }}">{{ color }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <small class="text-muted">Leave empty to select all</small>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <!-- Product Codes Filter -->
+                                    <div class="col-md-8 mb-3">
+                                        <label for="product_codes" class="form-label">🔢 Product Codes</label>
+                                        <select class="form-control select2-multi" id="product_codes" name="product_codes" multiple>
+                                            {% for code in product_codes %}
+                                                <option value="{{ code }}">{{ code }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        <small class="text-muted">Leave empty to select all</small>
+                                    </div>
+
+                                    <!-- Stock Filter -->
+                                    <div class="col-md-4 mb-3">
+                                        <label for="stock_filter" class="form-label">📊 Stock Status</label>
+                                        <select class="form-control" id="stock_filter" name="stock_filter">
+                                            <option value="all">All Products</option>
+                                            <option value="in_stock">In Stock Only</option>
+                                            <option value="out_of_stock">Out of Stock Only</option>
+                                            <option value="low_stock">Low Stock (≤5)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Export Info -->
+                            <div class="alert alert-info">
+                                <h6 class="alert-heading">ℹ️ Export Information</h6>
+                                <ul class="mb-0">
+                                    <li>The exported Excel file will have the <strong>same format</strong> as the Import template</li>
+                                    <li>Each color will be exported as a <strong>separate row</strong></li>
+                                    <li>Current stock levels will be included</li>
+                                    <li>You can edit the file and re-import it to update products</li>
+                                </ul>
+                            </div>
+
+                            <!-- Submit Buttons -->
+                            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                <button type="button" class="btn btn-secondary me-md-2" onclick="resetFilters()">🔄 Reset Filters</button>
+                                <button type="submit" class="btn btn-success btn-lg">
+                                    📥 Export to Excel
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+            // تفعيل Select2 للـ Multi-Select
+            $('.select2-multi').select2({
+                theme: 'bootstrap-5',
+                placeholder: 'Select multiple options...',
+                allowClear: true,
+                width: '100%'
+            });
+        });
+
+        function resetFilters() {
+            // إعادة تعيين كل الـ Select2
+            $('.select2-multi').val(null).trigger('change');
+            document.getElementById('stock_filter').value = 'all';
+        }
+</script>
+{% endblock %}

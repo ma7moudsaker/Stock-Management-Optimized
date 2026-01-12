@@ -1,0 +1,418 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Upload Excel - Stock Management{% endblock %}
+
+{% block extra_css %}
+<style>
+.upload-area {
+            border: 3px dashed #007bff;
+            border-radius: 15px;
+            padding: 40px;
+            text-align: center;
+            background: linear-gradient(135deg, #f8f9ff 0%, #e3f2fd 100%);
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+        .upload-area:hover {
+            border-color: #0056b3;
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        }
+        .upload-area.dragover {
+            border-color: #28a745;
+            background: linear-gradient(135deg, #f0fff4 0%, #c8e6c9 100%);
+        }
+        .feature-card {
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            transition: all 0.3s;
+        }
+        .feature-card:hover {
+            border-color: #007bff;
+            box-shadow: 0 4px 15px rgba(0,123,255,0.15);
+        }
+        .template-preview {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+        }
+        .step-indicator {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1>📊 Bulk Upload from Excel</h1>
+                    <div>
+                        <a href="/download_excel_template" class="btn btn-success me-2">📥 Download Template</a>
+                        <a href="/add_products_multi" class="btn btn-outline-info me-2">➕ Manual Add</a>
+                        <a href="/products_new" class="btn btn-outline-secondary">📋 View Products</a>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <!-- Upload Section -->
+                    <div class="col-md-8">
+                        <!-- Step-by-Step Guide -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h5>📋 Step-by-Step Guide</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <div class="d-flex align-items-center mb-2">
+                                            <div class="step-indicator me-3">1</div>
+                                            <strong>Download Template</strong>
+                                        </div>
+                                        <small class="text-muted">Download the Excel template with all required columns and example data.</small>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="d-flex align-items-center mb-2">
+                                            <div class="step-indicator me-3">2</div>
+                                            <strong>Fill Your Data</strong>
+                                        </div>
+                                        <small class="text-muted">Add your products with codes, brands, sizes, colors, tags, and image URLs.</small>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="d-flex align-items-center mb-2">
+                                            <div class="step-indicator me-3">3</div>
+                                            <strong>Upload & Import</strong>
+                                        </div>
+                                        <small class="text-muted">Upload your completed Excel file and import all products at once.</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Upload Form -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h5>📤 Upload Excel File</h5>
+                            </div>
+                            <div class="card-body">
+                                <form method="POST" enctype="multipart/form-data" id="uploadForm">
+                                    <!-- Drag & Drop Area -->
+                                    <div class="upload-area mb-4" id="uploadArea" onclick="document.getElementById('excel_file').click()">
+                                        <div id="uploadContent">
+                                            <i class="fas fa-cloud-upload-alt fa-3x text-primary mb-3"></i>
+                                            <h5>Drag & Drop Excel File Here</h5>
+                                            <p class="text-muted">or click to browse files</p>
+                                            <small class="text-muted">Supports .xlsx and .xls files</small>
+                                        </div>
+                                    </div>
+                                    
+                                    <input type="file" class="d-none" id="excel_file" name="excel_file" 
+                                           accept=".xlsx,.xls" required onchange="handleFileSelect(this)">
+                                    
+                                    <!-- File Info -->
+                                    <div id="fileInfo" class="alert alert-info" style="display: none;">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <strong>Selected File:</strong> <span id="fileName"></span><br>
+                                                <small>Size: <span id="fileSize"></span> | Type: <span id="fileType"></span></small>
+                                            </div>
+                                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearFile()">Remove</button>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Options -->
+                                    <div class="row mb-4">
+                                        <div class="col-md-6">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="skipDuplicates" checked>
+                                                <label class="form-check-label" for="skipDuplicates">
+                                                    Skip duplicate products (recommended)
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="validateData" checked>
+                                                <label class="form-check-label" for="validateData">
+                                                    Validate data before import
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Submit Buttons -->
+                                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                        <button type="button" class="btn btn-secondary me-md-2" onclick="previewData()">👁️ Preview Data</button>
+                                        <button type="submit" class="btn btn-primary">📤 Upload & Import Products</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                        
+                        <!-- Upload Progress -->
+                        <div class="card mt-4" id="progressCard" style="display: none;">
+                            <div class="card-body">
+                                <h6>Upload Progress</h6>
+                                <div class="progress mb-2">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                                </div>
+                                <small class="text-muted" id="progressText">Processing your Excel file...</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Instructions & Template Info -->
+                    <div class="col-md-4">
+                        <!-- Template Download -->
+                        <div class="card feature-card mb-4">
+                            <div class="card-header">
+                                <h6>📥 Excel Template</h6>
+                            </div>
+                            <div class="card-body">
+                                <p><strong>Enhanced Template with:</strong></p>
+                                <ul class="list-unstyled">
+                                    <li>✅ <strong>Product Size</strong> column</li>
+                                    <li>✅ <strong>Tags</strong> column for multiple tags</li>
+                                    <li>✅ <strong>Image URLs</strong> for each color</li>
+                                    <li>✅ <strong>Example data</strong> for reference</li>
+                                    <li>✅ <strong>Validation rules</strong> built-in</li>
+                                </ul>
+                                
+                                <div class="d-grid">
+                                    <a href="/download_excel_template" class="btn btn-success">
+                                        📥 Download Enhanced Template
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Required Columns -->
+                        <div class="card feature-card mb-4">
+                            <div class="card-header">
+                                <h6>📋 Required Columns</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="template-preview">
+                                    <strong>Column Order:</strong><br>
+                                    1. Product Code<br>
+                                    2. Brand ID<br>
+                                    3. Product Type ID<br>
+                                    4. Category<br>
+                                    5. Size (NEW)<br>
+                                    6. Wholesale Price<br>
+                                    7. Retail Price<br>
+                                    8. Colors<br>
+                                    9. Stocks<br>
+                                    10. Image URLs<br>
+                                    11. Tags (NEW)
+                                </div>
+                                
+                                <hr>
+                                
+                                <p><strong>Example Row:</strong></p>
+                                <div class="template-preview">
+                                    96115 | 1 | 1 | L | 20×22×5 | 1000 | 1500 | Black,Red | 15,5 | img1.jpg,img2.jpg | Sale,Medium
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Tips & Best Practices -->
+                        <div class="card feature-card">
+                            <div class="card-header">
+                                <h6>💡 Tips & Best Practices</h6>
+                            </div>
+                            <div class="card-body">
+                                <ul class="list-unstyled">
+                                    <li>🎯 <strong>Size Format:</strong> Use 20×22×5 or 15*18</li>
+                                    <li>🏷️ <strong>Tags:</strong> Separate with commas (Sale,Medium,Leather)</li>
+                                    <li>🎨 <strong>Colors:</strong> Must match existing colors in system</li>
+                                    <li>📷 <strong>Images:</strong> Use direct URLs or upload to cloud first</li>
+                                    <li>🔢 <strong>Stock Numbers:</strong> Must be integers (whole numbers)</li>
+                                    <li>⚠️ <strong>Brand/Type IDs:</strong> Check existing IDs in system</li>
+                                    <li>📊 <strong>File Size:</strong> Keep under 5MB for best performance</li>
+                                    <li>🔄 <strong>Duplicates:</strong> System will skip existing products</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Preview Modal -->
+    <div class="modal fade" id="previewModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">👁️ Data Preview</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="previewContent">
+                    <p class="text-muted">Select a file to preview its contents...</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" onclick="proceedWithUpload()">Proceed with Upload</button>
+                </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Drag & Drop functionality
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('excel_file');
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                handleFileSelect(fileInput);
+            }
+        });
+        
+        function handleFileSelect(input) {
+            const file = input.files[0];
+            if (file) {
+                // Validate file type
+                const validTypes = ['.xlsx', '.xls'];
+                const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+                
+                if (!validTypes.includes(fileExtension)) {
+                    alert('Please select a valid Excel file (.xlsx or .xls)');
+                    clearFile();
+                    return;
+                }
+                
+                // Show file info
+                document.getElementById('fileName').textContent = file.name;
+                document.getElementById('fileSize').textContent = formatFileSize(file.size);
+                document.getElementById('fileType').textContent = file.type || 'Excel file';
+                document.getElementById('fileInfo').style.display = 'block';
+                
+                // Update upload area
+                document.getElementById('uploadContent').innerHTML = `
+                    <i class="fas fa-file-excel fa-3x text-success mb-3"></i>
+                    <h5 class="text-success">File Selected Successfully!</h5>
+                    <p class="text-muted">${file.name}</p>
+                    <small class="text-muted">Click to change file</small>
+                `;
+            }
+        }
+        
+        function clearFile() {
+            document.getElementById('excel_file').value = '';
+            document.getElementById('fileInfo').style.display = 'none';
+            document.getElementById('uploadContent').innerHTML = `
+                <i class="fas fa-cloud-upload-alt fa-3x text-primary mb-3"></i>
+                <h5>Drag & Drop Excel File Here</h5>
+                <p class="text-muted">or click to browse files</p>
+                <small class="text-muted">Supports .xlsx and .xls files</small>
+            `;
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        function previewData() {
+            const fileInput = document.getElementById('excel_file');
+            if (!fileInput.files[0]) {
+                alert('Please select an Excel file first!');
+                return;
+            }
+            
+            // Show preview modal with loading
+            document.getElementById('previewContent').innerHTML = `
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-3">Reading Excel file...</p>
+                </div>
+            `;
+            
+            new bootstrap.Modal(document.getElementById('previewModal')).show();
+            
+            // Simulate preview (you can implement actual Excel reading here)
+            setTimeout(() => {
+                document.getElementById('previewContent').innerHTML = `
+                    <div class="alert alert-info">
+                        <h6>📊 File Analysis</h6>
+                        <p><strong>File:</strong> ${fileInput.files[0].name}</p>
+                        <p><strong>Size:</strong> ${formatFileSize(fileInput.files[0].size)}</p>
+                        <p><strong>Expected Columns:</strong> Product Code, Brand ID, Type ID, Category, Size, Wholesale, Retail, Colors, Stocks, Images, Tags</p>
+                    </div>
+                    <div class="alert alert-warning">
+                        <strong>Note:</strong> This is a preview feature. The actual data will be processed when you upload the file.
+                    </div>
+                    <p class="text-muted">Preview functionality will show the first 10 rows of your Excel file to verify the format before uploading.</p>
+                `;
+            }, 1500);
+        }
+        
+        function proceedWithUpload() {
+            bootstrap.Modal.getInstance(document.getElementById('previewModal')).hide();
+            document.getElementById('uploadForm').submit();
+        }
+        
+        // Form submission with progress
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            const fileInput = document.getElementById('excel_file');
+            if (!fileInput.files[0]) {
+                e.preventDefault();
+                alert('Please select an Excel file!');
+                return false;
+            }
+            
+            // Show progress
+            document.getElementById('progressCard').style.display = 'block';
+            
+            // Simulate progress
+            let progress = 0;
+            const progressBar = document.querySelector('.progress-bar');
+            const progressText = document.getElementById('progressText');
+            
+            const interval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress > 90) progress = 90;
+                
+                progressBar.style.width = progress + '%';
+                
+                if (progress < 30) {
+                    progressText.textContent = 'Reading Excel file...';
+                } else if (progress < 60) {
+                    progressText.textContent = 'Validating product data...';
+                } else if (progress < 90) {
+                    progressText.textContent = 'Processing images and tags...';
+                } else {
+                    progressText.textContent = 'Finalizing import...';
+                    clearInterval(interval);
+                }
+            }, 300);
+        });
+</script>
+{% endblock %}

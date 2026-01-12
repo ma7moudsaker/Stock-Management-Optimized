@@ -1,0 +1,615 @@
+{% extends "base.html" %}
+
+{% block title %}Inventory Management - Stock Management{% endblock %}
+
+{% block extra_css %}
+<style>
+.stock-input {
+            width: 70px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .color-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-right: 8px;
+            border: 2px solid #ccc;
+        }
+        .color-image-small {
+            width: 30px;
+            height: 30px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 2px solid #ddd;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .color-image-small:hover {
+            transform: scale(1.2);
+            border-color: #007bff;
+        }
+        .no-image-small {
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(45deg, #f0f0f0 25%, transparent 25%), 
+                        linear-gradient(-45deg, #f0f0f0 25%, transparent 25%);
+            background-size: 6px 6px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: #999;
+        }
+        .product-row {
+            border-bottom: 2px solid #eee;
+            transition: background-color 0.2s;
+        }
+        .product-row:hover {
+            background-color: #f8f9fa;
+        }
+        .sticky-header {
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 1020;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .product-size-badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75em;
+            font-weight: 500;
+        }
+        .product-tags-small {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 3px;
+            margin-top: 3px;
+        }
+        .changed-input {
+            background-color: #fff3cd !important;
+            border-color: #ffc107 !important;
+            font-weight: bold;
+        }
+        .color-image-large {
+            width: 50px;
+            height: 50px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 2px solid #ddd;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .color-image-large:hover {
+            transform: scale(1.1);
+            border-color: #007bff;
+        }
+        .no-image-large {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(45deg, #f0f0f0 25%, transparent 25%), 
+                        linear-gradient(-45deg, #f0f0f0 25%, transparent 25%);
+            background-size: 8px 8px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: #999;
+            margin: 0 auto;
+        }
+        .stock-input-large {
+            text-align: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+        .color-indicator {
+            width: 15px;
+            height: 15px;
+            border-radius: 3px;
+            border: 1px solid #ccc;
+        }
+        .color-image-large.lazy {
+            background-color: #f0f0f0;
+        }
+        .product-row.hidden {
+            display: none;
+        }
+        #loadMoreBtn {
+            display: none;
+        }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1>📋 Bulk Inventory Management</h1>
+                </div>
+
+                <!-- Summary Cards -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card bg-primary text-white">
+                            <div class="card-body text-center">
+                                <h4>{{ summary.total_products }}</h4>
+                                <small>Total Products</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-success text-white">
+                            <div class="card-body text-center">
+                                <h4>{{ summary.total_stock }}</h4>
+                                <small>Total Stock</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-warning text-white">
+                            <div class="card-body text-center">
+                                <h4>{{ summary.low_stock_variants }}</h4>
+                                <small>Low Stock Items</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-danger text-white">
+                            <div class="card-body text-center">
+                                <h4>{{ summary.out_of_stock_variants }}</h4>
+                                <small>Out of Stock</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Search and Filters -->
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <form method="GET" id="filterForm">
+                            <div class="row align-items-end">
+                                <div class="col-md-4">
+                                    <label for="search" class="form-label">Search Products</label>
+                                    <input type="text" class="form-control" id="search" name="search" placeholder="Search by code, brand, size, tags..." value="{{ search_term }}">
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="brand" class="form-label">Filter by Brand</label>
+                                    <select class="form-control" id="brand" name="brand">
+                                        <option value="">All Brands</option>
+                                        {% for brand in brands %}
+                                            <option value="{{ brand }}" {% if brand == brand_filter %}selected{% endif %}>{{ brand }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label for="category" class="form-label">Filter by Category</label>
+                                    <select class="form-control" id="category" name="category">
+                                        <option value="">All Categories</option>
+                                        {% for category in categories %}
+                                            <option value="{{ category }}" {% if category == category_filter %}selected{% endif %}>{{ category }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <button type="submit" class="btn btn-primary w-100">🔍 Filter</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Inventory Table -->
+                <form id="inventoryForm" onsubmit="return saveAllChanges(event);">
+                    <div class="card">
+                        <div class="card-header sticky-header">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">📦 Inventory List ({{ inventory_data|length }} products)</h5>
+                                <div>
+                                    <span id="changesCounter" class="badge bg-warning me-2" style="display: none;">0 changes</span>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetAllChanges()">🔄 Reset</button>
+                                    <button type="submit" class="btn btn-sm btn-success">💾 Save All Changes</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body p-0">
+                            {% if inventory_data %}
+                                <div class="table-responsive">
+                                    <table class="table table-hover mb-0">
+                                        <thead class="table-dark sticky-header">
+                                            <tr>
+                                                <th style="width: 15%;">Product Info</th>
+                                                <th style="width: 10%;">Size & Tags</th>
+                                                <th style="width: 45%;">Colors, Images & Stock</th>
+                                                <th style="width: 10%;">Total Stock</th>
+                                                <th style="width: 20%;">Quick Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="inventoryTableBody">
+                                            {% for item in inventory_data %}
+                                                {% set product = item.product %}
+                                                <tr class="product-row">
+                                                    <td>
+                                                        <strong class="text-primary">{{ product[1] }}</strong><br>
+                                                        <small class="text-muted">{{ product[2] }}</small><br>
+                                                        <span class="badge bg-info">{{ product[4] }}</span>
+                                                        <small class="text-muted">ID: {{ product[0] }}</small>
+                                                    </td>
+                                                    <td>
+                                                        {% if product[5] %}
+                                                            <span class="product-size-badge">{{ product[5] }}</span><br>
+                                                        {% endif %}
+                                                        {% if item.tags %}
+                                                            <div class="product-tags-small">
+                                                                {% for tag in item.tags %}
+                                                                    <span class="badge" style="background-color: {{ tag[3] }}; color: white; font-size: 0.6em;">{{ tag[1] }}</span>
+                                                                {% endfor %}
+                                                            </div>
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>
+                                                        <div class="row g-2">
+                                                            {% for variant in item.color_variants %}
+                                                                <div class="col-6 mb-3">
+                                                                    <div class="card border-light h-100">
+                                                                        <div class="card-body p-2 text-center">
+                                                                            <div class="mb-2">
+                                                                                {% if variant[5] %}
+                                                                                    <img data-src="{{ variant[5] }}" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="{{ variant[2] }}" class="color-image-large lazy" onclick="openImageInNewTab('{{ variant[5] }}')" title="Click to view full size - {{ variant[2] }}">
+                                                                                {% else %}
+                                                                                    <div class="no-image-large" title="No image for {{ variant[2] }}">📷</div>
+                                                                                {% endif %}
+                                                                            </div>
+                                                                            <div class="d-flex align-items-center justify-content-center mb-2">
+                                                                                <div class="color-indicator me-1" style="background-color: {{ variant[3] }};"></div>
+                                                                                <small class="fw-bold text-truncate">{{ variant[2] }}</small>
+                                                                            </div>
+                                                                            
+                                                                            <!-- Stock Input مع الأسهم الكبيرة -->
+                                                                            <div class="input-group">
+                                                                                <button type="button" class="btn btn-outline-danger btn-lg" onclick="adjustStock({{ variant[0] }}, -1)" style="font-size: 1rem; padding: 0.25rem 0.25rem;">➖</button>
+                                                                                <input type="number" class="form-control stock-input-large text-center" name="stock_{{ variant[0] }}" value="{{ variant[4] }}" min="0" onchange="markChanged(this)" data-original="{{ variant[4] }}" style="font-size: 1.2rem; font-weight: bold;">
+                                                                                <button type="button" class="btn btn-outline-success btn-lg" onclick="adjustStock({{ variant[0] }}, 1)" style="font-size: 1rem; padding: 0.25rem 0.25rem;">➕</button>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            {% endfor %}
+                                                        </div>
+                                                    </td>
+                                                    <td><span class="badge bg-success fs-6" id="total_{{ product[0] }}">{{ item.total_stock }}</span></td>
+                                                    <td>
+                                                        <div class="btn-group-vertical btn-group-sm w-100">
+                                                            <button type="button" class="btn btn-outline-success btn-sm mb-1" onclick="addToAll({{ product[0] }}, 5)" title="Add 5 to all colors">+5 All</button>
+                                                            <button type="button" class="btn btn-outline-info btn-sm mb-1" onclick="addToAll({{ product[0] }}, 10)" title="Add 10 to all colors">+10 All</button>
+                                                            <button type="button" class="btn btn-outline-warning btn-sm mb-1" onclick="setAllToZero({{ product[0] }})" title="Set all to 0">Zero All</button>
+                                                            <a href="/product_details/{{ product[0] }}" class="btn btn-outline-primary btn-sm" 
+                                                            title="View details">   </a>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            {% else %}
+                                <div class="text-center py-5">
+                                    <h4>No products found</h4>
+                                    <p class="text-muted">Try adjusting your search filters.</p>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Load More Button -->
+                    <div class="text-center mt-4">
+                        <button type="button" id="loadMoreBtn" class="btn btn-outline-primary">Load More Products</button>
+                    </div>
+                </form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+        
+        // === INVENTORY LOGIC ===
+        let changedInputs = new Set();
+        
+        function adjustStock(variantId, change) {
+            const input = document.querySelector(`input[name="stock_${variantId}"]`);
+            if (!input) {
+                console.error('Input not found for variant:', variantId);
+                return;
+            }
+            const currentValue = parseInt(input.value) || 0;
+            const newValue = Math.max(0, currentValue + change);
+            input.value = newValue;
+            markChanged(input);
+            updateProductTotal(input);
+        }
+        
+        function markChanged(input) {
+            const originalValue = input.getAttribute('data-original');
+            const currentValue = input.value;
+            
+            if (originalValue != currentValue) {
+                input.classList.add('changed-input');
+                changedInputs.add(input.name);
+            } else {
+                input.classList.remove('changed-input');
+                changedInputs.delete(input.name);
+            }
+            
+            updateChangesCounter();
+            updateProductTotal(input);
+        }
+        
+        function updateChangesCounter() {
+            const counter = document.getElementById('changesCounter');
+            if (changedInputs.size > 0) {
+                counter.textContent = `${changedInputs.size} changes`;
+                counter.style.display = 'inline';
+            } else {
+                counter.style.display = 'none';
+            }
+        }
+        
+        function updateProductTotal(input) {
+            const productRow = input.closest('tr');
+            const allInputs = productRow.querySelectorAll('input[type="number"]');
+            let total = 0;
+            allInputs.forEach(inp => {
+                total += parseInt(inp.value) || 0;
+            });
+            
+            const productId = productRow.querySelector('[id^="total_"]').id.replace('total_', '');
+            document.getElementById('total_' + productId).textContent = total;
+        }
+        
+        function addToAll(productId, amount) {
+            const totalSpan = document.getElementById('total_' + productId);
+            if (!totalSpan) {
+                console.error('Total span not found for product:', productId);
+                return;
+            }
+            
+            const productRow = totalSpan.closest('tr');
+            if (!productRow) {
+                console.error('Product row not found');
+                return;
+            }
+            
+            const inputs = productRow.querySelectorAll('input[type="number"]');
+            console.log('Found inputs:', inputs.length);
+            
+            inputs.forEach(input => {
+                const currentValue = parseInt(input.value) || 0;
+                input.value = Math.max(0, currentValue + amount);
+                markChanged(input);
+            });
+            
+            if (inputs.length > 0) {
+                updateProductTotal(inputs[0]);
+            }
+        }
+        
+        function setAllToZero(productId) {
+            if (!confirm('Are you sure you want to set all colors to 0 stock?')) {
+                return;
+            }
+            
+            const totalSpan = document.getElementById('total_' + productId);
+            if (!totalSpan) {
+                console.error('Total span not found for product:', productId);
+                return;
+            }
+            
+            const productRow = totalSpan.closest('tr');
+            if (!productRow) {
+                console.error('Product row not found');
+                return;
+            }
+            
+            const inputs = productRow.querySelectorAll('input[type="number"]');
+            
+            inputs.forEach(input => {
+                input.value = 0;
+                markChanged(input);
+            });
+            
+            if (inputs.length > 0) {
+                updateProductTotal(inputs[0]);
+            }
+        }
+        
+        function resetAllChanges() {
+            if (!confirm('Are you sure you want to reset all changes?')) {
+                return;
+            }
+            
+            document.querySelectorAll('input[type="number"]').forEach(input => {
+                const originalValue = input.getAttribute('data-original');
+                input.value = originalValue;
+                input.classList.remove('changed-input');
+            });
+            
+            changedInputs.clear();
+            updateChangesCounter();
+            location.reload();
+        }
+        
+        // === AJAX SAVE WITHOUT RELOAD ===
+        function saveAllChanges(event) {
+            if (event) {
+                event.preventDefault();
+            }
+            
+            const form = document.getElementById('inventoryForm');
+            const formData = new FormData(form);
+            const saveButton = form.querySelector('button[type="submit"]');
+            const originalText = saveButton.innerHTML;
+            
+            // تغيير شكل الزرار أثناء الحفظ
+            saveButton.disabled = true;
+            saveButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving...';
+            
+            fetch('/update_inventory', {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Response data:', data);
+                if (data.success) {
+                    // إظهار رسالة نجاح
+                    showNotification('✅ Saved successfully! Updated ' + data.updated_count + ' products.', 'success');
+                    
+                    // تحديث الـ data-original للـ inputs
+                    document.querySelectorAll('input[type="number"]').forEach(input => {
+                        input.setAttribute('data-original', input.value);
+                        input.classList.remove('changed-input');
+                    });
+                    
+                    // مسح الـ changes counter
+                    changedInputs.clear();
+                    updateChangesCounter();
+                    
+                } else {
+                    showNotification('❌ Error: ' + (data.error || 'Unknown error'), 'danger');
+                }
+            })
+            .catch(error => {
+                console.error('Save error:', error);
+                showNotification('❌ Error saving changes: ' + error.message, 'danger');
+            })
+            .finally(() => {
+                // إرجاع الزرار لحالته الطبيعية
+                saveButton.disabled = false;
+                saveButton.innerHTML = originalText;
+            });
+            
+            return false;
+        }
+        
+        // دالة لإظهار Notifications
+        function showNotification(message, type) {
+            const toastHtml = `
+                <div class="position-fixed top-0 end-0 p-3" style="z-index: 9999;">
+                    <div class="toast show align-items-center text-white bg-${type} border-0" role="alert">
+                        <div class="d-flex">
+                            <div class="toast-body">${message}</div>
+                            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = toastHtml;
+            document.body.appendChild(tempDiv.firstElementChild);
+            
+            // إزالة بعد 5 ثواني
+            setTimeout(() => {
+                tempDiv.firstElementChild.remove();
+            }, 5000);
+        }
+        
+        // === LAZY LOADING ===
+        let lazyImageObserver;
+        
+        function initializeLazyLoading(selector) {
+            const images = document.querySelectorAll(selector);
+            
+            if ('IntersectionObserver' in window) {
+                if (lazyImageObserver) {
+                    lazyImageObserver.disconnect();
+                }
+                
+                lazyImageObserver = new IntersectionObserver((entries, observer) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            const lazyImage = entry.target;
+                            lazyImage.src = lazyImage.dataset.src;
+                            lazyImage.classList.remove('lazy');
+                            observer.unobserve(lazyImage);
+                        }
+                    });
+                });
+                
+                images.forEach(img => {
+                    lazyImageObserver.observe(img);
+                });
+            } else {
+                images.forEach(img => {
+                    img.src = img.dataset.src;
+                });
+            }
+        }
+        
+        // === LOAD MORE ===
+        function setupLoadMore() {
+            const tableBody = document.getElementById('inventoryTableBody');
+            if (!tableBody) return;
+            
+            const productRows = Array.from(tableBody.querySelectorAll('.product-row'));
+            const loadMoreBtn = document.getElementById('loadMoreBtn');
+            const itemsPerPage = 15;
+            let visibleItems = 0;
+            
+            if (productRows.length <= itemsPerPage) {
+                return;
+            }
+            
+            productRows.forEach(row => row.classList.add('hidden'));
+            
+            function showNextItems() {
+                const nextLimit = Math.min(visibleItems + itemsPerPage, productRows.length);
+                for (let i = visibleItems; i < nextLimit; i++) {
+                    productRows[i].classList.remove('hidden');
+                }
+                visibleItems = nextLimit;
+                
+                initializeLazyLoading('.product-row:not(.hidden) img.lazy');
+                
+                if (visibleItems >= productRows.length) {
+                    loadMoreBtn.style.display = 'none';
+                } else {
+                    loadMoreBtn.style.display = 'inline-block';
+                }
+            }
+            
+            loadMoreBtn.addEventListener('click', showNextItems);
+            showNextItems();
+        }
+        
+        // Make functions global
+        window.adjustStock = adjustStock;
+        window.markChanged = markChanged;
+        window.addToAll = addToAll;
+        window.setAllToZero = setAllToZero;
+        window.resetAllChanges = resetAllChanges;
+        window.saveAllChanges = saveAllChanges;
+        window.openImageInNewTab = function(imageUrl) {
+            window.open(imageUrl, '_blank');
+        };
+        
+        // Initialize
+        setupLoadMore();
+        initializeLazyLoading('.product-row:not(.hidden) img.lazy');
+    });
+</script>
+{% endblock %}

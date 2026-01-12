@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Trader Categories - Stock Management{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1>👥 Manage Trader Categories</h1>
+                </div>
+
+                <div class="row">
+                    <!-- Add New Category -->
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5>➕ Add New Trader Category</h5>
+                            </div>
+                            <div class="card-body">
+                                <form method="POST" action="/add_trader_category">
+                                    <div class="mb-3">
+                                        <label for="category_code" class="form-label">Category Code</label>
+                                        <input type="text" class="form-control" id="category_code" name="category_code" 
+                                               placeholder="e.g., L, F, A" maxlength="3" required style="text-transform: uppercase;">
+                                        <small class="form-text text-muted">Short code (1-3 characters)</small>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="category_name" class="form-label">Category Name</label>
+                                        <input type="text" class="form-control" id="category_name" name="category_name" 
+                                               placeholder="e.g., Category L" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="description" class="form-label">Description (Optional)</label>
+                                        <textarea class="form-control" id="description" name="description" 
+                                                  rows="2" placeholder="Description of this trader category"></textarea>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary w-100">Add Category</button>
+                                </form>
+                            </div>
+                        </div>
+                        
+                        <!-- Quick Categories -->
+                        <div class="card mt-3">
+                            <div class="card-header">
+                                <h6>⚡ Quick Categories</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="d-grid gap-2">
+                                    <button class="btn btn-outline-secondary btn-sm" onclick="setQuickCategory('L', 'Category L', 'Standard trader category L')">L - Category L</button>
+                                    <button class="btn btn-outline-secondary btn-sm" onclick="setQuickCategory('F', 'Category F', 'Standard trader category F')">F - Category F</button>
+                                    <button class="btn btn-outline-secondary btn-sm" onclick="setQuickCategory('A', 'Category A', 'Premium trader category A')">A - Category A</button>
+                                    <button class="btn btn-outline-secondary btn-sm" onclick="setQuickCategory('VIP', 'VIP Category', 'VIP trader category')">VIP - VIP Category</button>
+                                </div>
+                                <small class="text-muted mt-2 d-block">Click to auto-fill the form</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Existing Categories -->
+                    <div class="col-md-8">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5>📋 Existing Trader Categories ({{ categories|length }})</h5>
+                            </div>
+                            <div class="card-body">
+                                {% if categories %}
+                                <div class="table-responsive">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>ID</th>
+                                                <th>Code</th>
+                                                <th>Name</th>
+                                                <th>Description</th>
+                                                <th>Created Date</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for cat in categories %}
+                                            <tr>
+                                                <td>{{ cat[0] }}</td>
+                                                <td><span class="badge bg-info fs-6">{{ cat[1] }}</span></td>
+                                                <td><strong>{{ cat[2] }}</strong></td>
+                                                <td>{{ cat[3] if cat[3] else 'N/A' }}</td>
+                                                <td>{{ cat[4][:10] if cat[4] else 'N/A' }}</td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-outline-primary" 
+                                                            onclick="editCategory({{ cat[0] }}, '{{ cat[1] }}', '{{ cat[2] }}', '{{ cat[3] if cat[3] else '' }}')">
+                                                        ✏️ Edit
+                                                    </button>
+                                                    <button class="btn btn-sm btn-outline-danger" 
+                                                            onclick="deleteCategory({{ cat[0] }}, '{{ cat[1] }}')">
+                                                        🗑️ Delete
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {% else %}
+                                <p class="text-center text-muted">No trader categories found. Add your first category!</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Edit Category Modal -->
+    <div class="modal fade" id="editCategoryModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">✏️ Edit Trader Category</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="editCategoryForm" method="POST">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="edit_category_code" class="form-label">Category Code</label>
+                            <input type="text" class="form-control" id="edit_category_code" name="category_code" 
+                                   maxlength="3" required style="text-transform: uppercase;">
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit_category_name" class="form-label">Category Name</label>
+                            <input type="text" class="form-control" id="edit_category_name" name="category_name" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit_description" class="form-label">Description</label>
+                            <textarea class="form-control" id="edit_description" name="description" rows="2"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Category Modal -->
+    <div class="modal fade" id="deleteCategoryModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">🗑️ Delete Trader Category</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete the trader category <strong id="deleteCategoryName"></strong>?</p>
+                    <p class="text-danger"><small>This action cannot be undone!</small></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <form id="deleteCategoryForm" method="POST" style="display: inline;">
+                        <button type="submit" class="btn btn-danger">Delete Category</button>
+                    </form>
+                </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function setQuickCategory(code, name, description) {
+            document.getElementById('category_code').value = code;
+            document.getElementById('category_name').value = name;
+            document.getElementById('description').value = description;
+        }
+        
+        function editCategory(categoryId, code, name, description) {
+            document.getElementById('edit_category_code').value = code;
+            document.getElementById('edit_category_name').value = name;
+            document.getElementById('edit_description').value = description;
+            document.getElementById('editCategoryForm').action = '/edit_trader_category/' + categoryId;
+            new bootstrap.Modal(document.getElementById('editCategoryModal')).show();
+        }
+        
+        function deleteCategory(categoryId, categoryCode) {
+            document.getElementById('deleteCategoryName').textContent = categoryCode;
+            document.getElementById('deleteCategoryForm').action = '/delete_trader_category/' + categoryId;
+            new bootstrap.Modal(document.getElementById('deleteCategoryModal')).show();
+        }
+</script>
+{% endblock %}

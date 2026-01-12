@@ -1,0 +1,542 @@
+{% extends "base.html" %}
+
+{% block title %}Add Multiple Products - Stock Management{% endblock %}
+
+{% block extra_css %}
+<style>
+.product-form-card {
+            border: 2px solid #e9ecef;
+            transition: all 0.3s;
+        }
+        .product-form-card:hover {
+            border-color: #007bff;
+            box-shadow: 0 4px 12px rgba(0,123,255,0.15);
+        }
+        .product-form-card.filled {
+            border-color: #28a745;
+            background-color: #f8fff9;
+        }
+        .tags-selection {
+            max-height: 120px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 0.375rem;
+            padding: 10px;
+        }
+        .colors-selection {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 0.375rem;
+            padding: 10px;
+        }
+        .progress-indicator {
+            height: 4px;
+            background: linear-gradient(90deg, #28a745 0%, #ffc107 50%, #dc3545 100%);
+            border-radius: 2px;
+            margin-bottom: 10px;
+        }
+        .copy-data-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            color: white;
+        }
+        .copy-data-btn:hover {
+            background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+            color: white;
+        }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1>➕ Add Multiple Products</h1>
+                    <div>
+                        <a href="/add_product_new" class="btn btn-outline-secondary me-2">📝 Add Single Product</a>
+                        <a href="/bulk_upload_excel" class="btn btn-outline-info me-2">📊 Excel Upload</a>
+                        <a href="/products_new" class="btn btn-outline-secondary">📋 View Products</a>
+                    </div>
+                </div>
+
+                <!-- Number of Products Selector -->
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <div class="row align-items-center">
+                            <div class="col-md-4">
+                                <label for="numProducts" class="form-label">Number of products to add:</label>
+                                <select class="form-control" id="numProducts" onchange="generateProductForms()">
+                                    <option value="1">1 Product</option>
+                                    <option value="2">2 Products</option>
+                                    <option value="3">3 Products</option>
+                                    <option value="5" selected>5 Products</option>
+                                    <option value="10">10 Products</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <button type="button" class="btn copy-data-btn w-100" onclick="copyFirstProduct()">
+                                    📋 Copy First Product Data to All
+                                </button>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="progress-indicator"></div>
+                                <small class="text-muted">Progress: <span id="progressText">0/5 products filled</span></small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Products Form -->
+                <form method="POST" id="multiProductForm">
+                    <input type="hidden" name="num_products" id="numProductsHidden" value="5">
+                    
+                    <div id="productsContainer">
+                        <!-- Products will be generated here by JavaScript -->
+                    </div>
+                    
+                    <!-- Submit Buttons -->
+                    <div class="card mt-4">
+                        <div class="card-body">
+                            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                <button type="button" class="btn btn-secondary me-md-2" onclick="resetAllForms()">🔄 Reset All</button>
+                                <button type="button" class="btn btn-info me-md-2" onclick="previewProducts()">👁️ Preview</button>
+                                <button type="submit" class="btn btn-primary">✅ Add All Products</button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Preview Modal -->
+    <div class="modal fade" id="previewModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">👁️ Products Preview</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="previewContent">
+                    <!-- Preview content will be generated here -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" onclick="submitForm()">Add Products</button>
+                </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Data from server
+        const brands = {{ brands|tojson }};
+        const colors = {{ colors|tojson }};
+        const productTypes = {{ product_types|tojson }};
+        const traderCategories = {{ trader_categories|tojson }};
+        const tags = {{ tags|tojson }};
+        
+        // Generate product forms
+        function generateProductForms() {
+            const numProducts = document.getElementById('numProducts').value;
+            document.getElementById('numProductsHidden').value = numProducts;
+            
+            const container = document.getElementById('productsContainer');
+            container.innerHTML = '';
+            
+            for (let i = 0; i < numProducts; i++) {
+                container.appendChild(createProductForm(i));
+            }
+            
+            updateProgress();
+        }
+        
+        function createProductForm(index) {
+            const card = document.createElement('div');
+            card.className = 'card mb-4 product-form-card';
+            card.innerHTML = `
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6>Product ${index + 1}</h6>
+                    <div>
+                        <button type="button" class="btn btn-sm btn-outline-warning" onclick="duplicateProduct(${index})">📋 Duplicate</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearProduct(${index})">🗑️ Clear</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <!-- Basic Info Row -->
+                        <div class="col-md-2">
+                            <div class="mb-3">
+                                <label class="form-label">Product Code *</label>
+                                <input type="text" class="form-control" name="product_code_${index}" 
+                                       placeholder="96115" required onchange="updateProgress()">
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-2">
+                            <div class="mb-3">
+                                <label class="form-label">Brand *</label>
+                                <select class="form-control" name="brand_id_${index}" required onchange="updateProgress()">
+                                    <option value="">Select Brand</option>
+                                    ${brands.map(brand => `<option value="${brand[0]}">${brand[1]}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-2">
+                            <div class="mb-3">
+                                <label class="form-label">Type *</label>
+                                <select class="form-control" name="product_type_id_${index}" required onchange="updateProgress()">
+                                    <option value="">Select Type</option>
+                                    ${productTypes.map(type => `<option value="${type[0]}">${type[1]}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-2">
+                            <div class="mb-3">
+                                <label class="form-label">Category *</label>
+                                <select class="form-control" name="trader_category_${index}" required onchange="updateProgress()">
+                                    <option value="">Select Category</option>
+                                    ${traderCategories.map(cat => `<option value="${cat[1]}">${cat[1]} - ${cat[2]}</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-2">
+                            <div class="mb-3">
+                                <label class="form-label">Size</label>
+                                <input type="text" class="form-control" name="product_size_${index}" 
+                                       placeholder="20×22×5" onchange="updateProgress()">
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-2">
+                            <div class="mb-3">
+                                <label class="form-label">Initial Stock</label>
+                                <input type="number" class="form-control" name="initial_stock_${index}" 
+                                       value="0" min="0" onchange="updateProgress()">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <!-- Pricing Row -->
+                        <div class="col-md-3">
+                            <div class="mb-3">
+                                <label class="form-label">Wholesale (EGP) *</label>
+                                <input type="number" step="0.01" class="form-control" name="wholesale_price_${index}" 
+                                       placeholder="1000.00" required onchange="updateProgress(); calculateProfit(${index})">
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-3">
+                            <div class="mb-3">
+                                <label class="form-label">Retail (EGP) *</label>
+                                <input type="number" step="0.01" class="form-control" name="retail_price_${index}" 
+                                       placeholder="1500.00" required onchange="updateProgress(); calculateProfit(${index})">
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-3">
+                            <div class="mb-3">
+                                <label class="form-label">Profit</label>
+                                <div class="form-control bg-light" id="profit_${index}">
+                                    <small class="text-muted">0 EGP (0%)</small>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-3">
+                            <div class="mb-3">
+                                <label class="form-label">Product Preview</label>
+                                <div class="form-control bg-light" id="preview_${index}">
+                                    <small class="text-muted">Fill form to see preview</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <!-- Tags Selection -->
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Tags (Optional)</label>
+                                <div class="tags-selection">
+                                    <div class="row">
+                                        ${tags.map(tag => `
+                                            <div class="col-md-6 mb-1">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" 
+                                                           value="${tag[0]}" id="tag_${index}_${tag[0]}" name="tag_ids_${index}">
+                                                    <label class="form-check-label d-flex align-items-center" for="tag_${index}_${tag[0]}">
+                                                        <span class="badge me-2" style="background-color: ${tag[3]}; color: white; font-size: 0.7em;">
+                                                            ${tag[1]}
+                                                        </span>
+                                                        <small>${tag[2]}</small>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Colors Selection -->
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Colors * (Select multiple)</label>
+                                <div class="colors-selection">
+                                    <div class="row">
+                                        ${colors.map(color => `
+                                            <div class="col-md-6 mb-1">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" 
+                                                           value="${color[0]}" id="color_${index}_${color[0]}" name="color_ids_${index}">
+                                                    <label class="form-check-label d-flex align-items-center" for="color_${index}_${color[0]}">
+                                                        <div style="width: 15px; height: 15px; background-color: ${color[2]}; 
+                                                                    border: 1px solid #ccc; border-radius: 2px; margin-right: 5px;"></div>
+                                                        <small>${color[1]}</small>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            return card;
+        }
+        
+        function calculateProfit(index) {
+            const wholesale = parseFloat(document.querySelector(`[name="wholesale_price_${index}"]`).value) || 0;
+            const retail = parseFloat(document.querySelector(`[name="retail_price_${index}"]`).value) || 0;
+            
+            if (wholesale > 0 && retail > 0) {
+                const profit = retail - wholesale;
+                const percentage = (profit / retail * 100).toFixed(1);
+                
+                document.getElementById(`profit_${index}`).innerHTML = 
+                    `<small class="text-info">${profit.toFixed(2)} EGP (${percentage}%)</small>`;
+            } else {
+                document.getElementById(`profit_${index}`).innerHTML = 
+                    '<small class="text-muted">0 EGP (0%)</small>';
+            }
+        }
+        
+        function updateProgress() {
+            const numProducts = parseInt(document.getElementById('numProducts').value);
+            let filledProducts = 0;
+            
+            for (let i = 0; i < numProducts; i++) {
+                const code = document.querySelector(`[name="product_code_${i}"]`)?.value || '';
+                const brand = document.querySelector(`[name="brand_id_${i}"]`)?.value || '';
+                const type = document.querySelector(`[name="product_type_id_${i}"]`)?.value || '';
+                const category = document.querySelector(`[name="trader_category_${i}"]`)?.value || '';
+                const wholesale = document.querySelector(`[name="wholesale_price_${i}"]`)?.value || '';
+                const retail = document.querySelector(`[name="retail_price_${i}"]`)?.value || '';
+                
+                const card = document.querySelectorAll('.product-form-card')[i];
+                
+                if (code && brand && type && category && wholesale && retail) {
+                    filledProducts++;
+                    card?.classList.add('filled');
+                    
+                    // Update preview
+                    const brandText = document.querySelector(`[name="brand_id_${i}"] option:checked`)?.text || '';
+                    const typeText = document.querySelector(`[name="product_type_id_${i}"] option:checked`)?.text || '';
+                    const size = document.querySelector(`[name="product_size_${i}"]`)?.value || '';
+                    const fullCode = `${brandText} ${typeText} ${category}- ${code}`;
+                    const sizeText = size ? ` (${size})` : '';
+                    
+                    document.getElementById(`preview_${i}`).innerHTML = 
+                        `<small class="text-success">${fullCode}${sizeText}</small>`;
+                } else {
+                    card?.classList.remove('filled');
+                    document.getElementById(`preview_${i}`).innerHTML = 
+                        '<small class="text-muted">Fill form to see preview</small>';
+                }
+            }
+            
+            document.getElementById('progressText').textContent = `${filledProducts}/${numProducts} products filled`;
+        }
+        
+        function copyFirstProduct() {
+            const firstProductInputs = document.querySelectorAll('[name^="brand_id_0"], [name^="product_type_id_0"], [name^="trader_category_0"], [name^="product_size_0"], [name^="wholesale_price_0"], [name^="retail_price_0"], [name^="initial_stock_0"]');
+            const firstProductColors = document.querySelectorAll('[name="color_ids_0"]:checked');
+            const firstProductTags = document.querySelectorAll('[name="tag_ids_0"]:checked');
+            
+            const numProducts = document.getElementById('numProducts').value;
+            
+            for (let i = 1; i < numProducts; i++) {
+                // Copy basic fields (except product code)
+                firstProductInputs.forEach(input => {
+                    const targetName = input.name.replace('_0', `_${i}`);
+                    const targetInput = document.querySelector(`[name="${targetName}"]`);
+                    if (targetInput) {
+                        targetInput.value = input.value;
+                    }
+                });
+                
+                // Copy selected colors
+                firstProductColors.forEach(colorInput => {
+                    const colorId = colorInput.value;
+                    const targetColorInput = document.querySelector(`[name="color_ids_${i}"][value="${colorId}"]`);
+                    if (targetColorInput) {
+                        targetColorInput.checked = true;
+                    }
+                });
+                
+                // Copy selected tags
+                firstProductTags.forEach(tagInput => {
+                    const tagId = tagInput.value;
+                    const targetTagInput = document.querySelector(`[name="tag_ids_${i}"][value="${tagId}"]`);
+                    if (targetTagInput) {
+                        targetTagInput.checked = true;
+                    }
+                });
+                
+                // Update profit calculation
+                calculateProfit(i);
+            }
+            
+            updateProgress();
+            alert('First product data copied to all products (except product codes)!');
+        }
+        
+        function duplicateProduct(sourceIndex) {
+            const numProducts = parseInt(document.getElementById('numProducts').value);
+            
+            // Find next empty slot
+            let targetIndex = -1;
+            for (let i = 0; i < numProducts; i++) {
+                if (i !== sourceIndex) {
+                    const code = document.querySelector(`[name="product_code_${i}"]`)?.value || '';
+                    if (!code) {
+                        targetIndex = i;
+                        break;
+                    }
+                }
+            }
+            
+            if (targetIndex === -1) {
+                alert('No empty slots available for duplication!');
+                return;
+            }
+            
+            // Copy all data except product code
+            const sourceInputs = document.querySelectorAll(`[name^="brand_id_${sourceIndex}"], [name^="product_type_id_${sourceIndex}"], [name^="trader_category_${sourceIndex}"], [name^="product_size_${sourceIndex}"], [name^="wholesale_price_${sourceIndex}"], [name^="retail_price_${sourceIndex}"], [name^="initial_stock_${sourceIndex}"]`);
+            
+            sourceInputs.forEach(input => {
+                const targetName = input.name.replace(`_${sourceIndex}`, `_${targetIndex}`);
+                const targetInput = document.querySelector(`[name="${targetName}"]`);
+                if (targetInput) {
+                    targetInput.value = input.value;
+                }
+            });
+            
+            // Copy colors and tags
+            const sourceColors = document.querySelectorAll(`[name="color_ids_${sourceIndex}"]:checked`);
+            const sourceTags = document.querySelectorAll(`[name="tag_ids_${sourceIndex}"]:checked`);
+            
+            sourceColors.forEach(colorInput => {
+                const colorId = colorInput.value;
+                const targetColorInput = document.querySelector(`[name="color_ids_${targetIndex}"][value="${colorId}"]`);
+                if (targetColorInput) {
+                    targetColorInput.checked = true;
+                }
+            });
+            
+            sourceTags.forEach(tagInput => {
+                const tagId = tagInput.value;
+                const targetTagInput = document.querySelector(`[name="tag_ids_${targetIndex}"][value="${tagId}"]`);
+                if (targetTagInput) {
+                    targetTagInput.checked = true;
+                }
+            });
+            
+            calculateProfit(targetIndex);
+            updateProgress();
+            
+            alert(`Product ${sourceIndex + 1} duplicated to Product ${targetIndex + 1}!`);
+        }
+        
+        function clearProduct(index) {
+            const productCard = document.querySelectorAll('.product-form-card')[index];
+            const inputs = productCard.querySelectorAll('input, select');
+            inputs.forEach(input => {
+                if (input.type === 'checkbox') {
+                    input.checked = false;
+                } else {
+                    input.value = '';
+                }
+            });
+            
+            document.getElementById(`profit_${index}`).innerHTML = '<small class="text-muted">0 EGP (0%)</small>';
+            document.getElementById(`preview_${index}`).innerHTML = '<small class="text-muted">Fill form to see preview</small>';
+            
+            updateProgress();
+        }
+        
+        function resetAllForms() {
+            if (confirm('Are you sure you want to reset all product forms?')) {
+                generateProductForms();
+            }
+        }
+        
+        function previewProducts() {
+            const previewContent = document.getElementById('previewContent');
+            const numProducts = document.getElementById('numProducts').value;
+            
+            let html = '<div class="table-responsive"><table class="table table-sm"><thead><tr><th>Product</th><th>Brand</th><th>Type</th><th>Category</th><th>Size</th><th>Colors</th><th>Tags</th><th>Prices</th></tr></thead><tbody>';
+            
+            for (let i = 0; i < numProducts; i++) {
+                const code = document.querySelector(`[name="product_code_${i}"]`)?.value || '';
+                if (!code) continue;
+                
+                const brand = document.querySelector(`[name="brand_id_${i}"] option:checked`)?.text || '';
+                const type = document.querySelector(`[name="product_type_id_${i}"] option:checked`)?.text || '';
+                const category = document.querySelector(`[name="trader_category_${i}"]`)?.value || '';
+                const size = document.querySelector(`[name="product_size_${i}"]`)?.value || '';
+                const wholesale = document.querySelector(`[name="wholesale_price_${i}"]`)?.value || '';
+                const retail = document.querySelector(`[name="retail_price_${i}"]`)?.value || '';
+                
+                const selectedColors = Array.from(document.querySelectorAll(`[name="color_ids_${i}"]:checked`))
+                    .map(cb => cb.nextElementSibling.textContent.trim());
+                
+                const selectedTags = Array.from(document.querySelectorAll(`[name="tag_ids_${i}"]:checked`))
+                    .map(cb => cb.nextElementSibling.textContent.trim());
+                
+                html += `
+                    <tr>
+                        <td><strong>${code}</strong></td>
+                        <td>${brand}</td>
+                        <td>${type}</td>
+                        <td><span class="badge bg-info">${category}</span></td>
+                        <td>${size || 'N/A'}</td>
+                        <td>${selectedColors.join(', ')}</td>
+                        <td>${selectedTags.join(', ')}</td>
+                        <td>W: ${wholesale} EGP<br>R: ${retail} EGP</td>
+                    </tr>
+                `;
+            }
+            
+            html += '</tbody></table></div>';
+            previewContent.innerHTML = html;
+            
+            new bootstrap.Modal(document.getElementById('previewModal')).show();
+        }
+        
+        function submitForm() {
+            document.getElementById('multiProductForm').submit();
+        }
+        
+        // Initialize with 5 products
+        document.addEventListener('DOMContentLoaded', function() {
+            generateProductForms();
+        });
+</script>
+{% endblock %}

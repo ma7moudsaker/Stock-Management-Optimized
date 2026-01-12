@@ -1,0 +1,214 @@
+<!-- Sidebar -->
+<div class="col-md-2 bg-dark text-white p-0 d-flex flex-column" style="min-height: 100vh;">
+    
+    <!-- Logo Section with Gradient Background -->
+    <div class="text-center py-4" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+        <div class="bg-white rounded-circle d-inline-flex align-items-center justify-content-center p-2 mb-2" 
+             style="width: 100px; height: 100px;">
+            <img src="{{ url_for('static', filename='logo.png') }}" 
+                 alt="Company Logo" 
+                 class="img-fluid" 
+                 style="max-width: 80px; max-height: 80px; object-fit: contain;">
+        </div>
+        <h5 class="mb-0 text-white">Stock System</h5>
+        <small class="text-white-50">Management Platform</small>
+    </div>
+    
+    <!-- Navigation Menu -->
+    <ul class="nav flex-column p-3 flex-grow-1">
+        
+        <!-- Dashboard -->
+        <li class="nav-item">
+            <a class="nav-link text-white {% if request.endpoint == 'dashboard' %}active bg-primary{% endif %}" 
+               href="{{ url_for('dashboard') }}">
+                📊 Dashboard
+            </a>
+        </li>
+
+        <!-- Products Section -->
+        {% if has_permission('products') or has_permission('add_product') or has_permission('bulk_upload') or has_permission('bulk_inventory') or has_permission('export_products') %}
+        <li class="nav-item">
+            <a class="nav-link text-white collapsed" data-bs-toggle="collapse" href="#productsMenu">
+                🛍️ Products
+                <i class="fas fa-chevron-down float-end"></i>
+            </a>
+            <div class="collapse" id="productsMenu">
+                <ul class="nav flex-column ms-3">
+                    {% if has_permission('products') %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if request.endpoint == 'products_new' %}active bg-primary{% endif %}" 
+                           href="{{ url_for('products_new') }}">
+                            📦 All Products
+                        </a>
+                    </li>
+                    {% endif %}
+                    
+                    {% if has_permission('add_product') %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if request.endpoint == 'add_product_new' %}active bg-primary{% endif %}" 
+                           href="{{ url_for('add_product_new') }}">
+                            ➕ Add Product
+                        </a>
+                    </li>
+                    {% endif %}
+                    
+                    {% if has_permission('add_multiple') %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if request.endpoint == 'add_products_multi' %}active bg-primary{% endif %}" 
+                           href="{{ url_for('add_products_multi') }}">
+                            ➕➕ Add Multiple
+                        </a>
+                    </li>
+                    {% endif %}
+                    
+                    {% if has_permission('bulk_upload') %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if request.endpoint == 'bulk_upload_excel' %}active bg-primary{% endif %}" 
+                           href="{{ url_for('bulk_upload_excel') }}">
+                            📤 Bulk Upload
+                        </a>
+                    </li>
+                    {% endif %}
+                    
+                    {% if has_permission('bulk_inventory') %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if request.endpoint == 'inventory_management' %}active bg-primary{% endif %}" 
+                           href="{{ url_for('inventory_management') }}">
+                            📋 Inventory
+                        </a>
+                    </li>
+                    {% endif %}
+                    
+                    {% if has_permission('export_products') %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if request.endpoint == 'export_products' %}active bg-primary{% endif %}" 
+                           href="{{ url_for('export_products') }}">
+                            📥 Export
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </li>
+        {% endif %}
+
+        <!-- Settings Section -->
+        {% if has_permission('manage_brands') or has_permission('manage_colors') or has_permission('manage_product_types') or has_permission('manage_trader_categories') or has_permission('manage_tags') %}
+        <li class="nav-item">
+            <a class="nav-link text-white collapsed" data-bs-toggle="collapse" href="#settingsMenu">
+                ⚙️ Settings
+                <i class="fas fa-chevron-down float-end"></i>
+            </a>
+            <div class="collapse" id="settingsMenu">
+                <ul class="nav flex-column ms-3">
+                    {% if has_permission('manage_brands') %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if request.endpoint == 'manage_brands' %}active bg-primary{% endif %}" 
+                           href="{{ url_for('manage_brands') }}">
+                            🏷️ Brands
+                        </a>
+                    </li>
+                    {% endif %}
+                    
+                    {% if has_permission('manage_colors') %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if request.endpoint == 'manage_colors' %}active bg-primary{% endif %}" 
+                           href="{{ url_for('manage_colors') }}">
+                            🎨 Colors
+                        </a>
+                    </li>
+                    {% endif %}
+                    
+                    {% if has_permission('manage_product_types') %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if request.endpoint == 'manage_product_types' %}active bg-primary{% endif %}" 
+                           href="{{ url_for('manage_product_types') }}">
+                            📂 Product Types
+                        </a>
+                    </li>
+                    {% endif %}
+                    
+                    {% if has_permission('manage_trader_categories') %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if request.endpoint == 'manage_trader_categories' %}active bg-primary{% endif %}" 
+                           href="{{ url_for('manage_trader_categories') }}">
+                            🏪 Categories
+                        </a>
+                    </li>
+                    {% endif %}
+                    
+                    {% if has_permission('manage_tags') %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if request.endpoint == 'manage_tags' %}active bg-primary{% endif %}" 
+                           href="{{ url_for('manage_tags') }}">
+                            🏷️ Tags
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </li>
+        {% endif %}
+
+        <!-- Reports Section -->
+        {% if has_permission('activity_logs') %}
+        <li class="nav-item">
+            <a class="nav-link text-white {% if request.endpoint == 'logs' %}active bg-primary{% endif %}" 
+               href="{{ url_for('logs') }}">
+                📝 Activity Logs
+            </a>
+        </li>
+        {% endif %}
+
+        <!-- Admin Section -->
+        {% if has_permission('user_management') or has_permission('backup_system') %}
+        <li class="nav-item">
+            <a class="nav-link text-white collapsed" data-bs-toggle="collapse" href="#adminMenu">
+                👑 Admin
+                <i class="fas fa-chevron-down float-end"></i>
+            </a>
+            <div class="collapse" id="adminMenu">
+                <ul class="nav flex-column ms-3">
+                    {% if has_permission('user_management') %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if request.endpoint == 'user_management' %}active bg-primary{% endif %}" 
+                           href="{{ url_for('user_management') }}">
+                            👥 Users
+                        </a>
+                    </li>
+                    {% endif %}
+                    
+                    {% if has_permission('backup_system') %}
+                    <li class="nav-item">
+                        <a class="nav-link text-white {% if request.endpoint == 'backup_page' %}active bg-primary{% endif %}" 
+                           href="{{ url_for('backup_page') }}">
+                            💾 Backups
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </li>
+        {% endif %}
+
+    </ul>
+
+    <!-- User Info at Bottom -->
+    <div class="p-3 border-top border-secondary mt-auto">
+        <div class="d-flex align-items-center mb-2">
+            <div class="bg-primary rounded-circle d-flex align-items-center justify-content-center" 
+                 style="width: 40px; height: 40px;">
+                <span class="text-white fw-bold">{{ session.get('username', 'U')[0]|upper }}</span>
+            </div>
+            <div class="ms-2 flex-grow-1">
+                <div class="text-white small fw-bold text-truncate">{{ session.get('full_name', 'User') }}</div>
+                <div class="text-muted" style="font-size: 0.75rem;">
+                    {{ session.get('role', 'User') }}
+                </div>
+            </div>
+        </div>
+        <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm w-100">
+            <i class="fas fa-sign-out-alt"></i> Logout
+        </a>
+    </div>
+</div>

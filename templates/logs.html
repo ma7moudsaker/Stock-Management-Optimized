@@ -1,0 +1,321 @@
+{% extends "base.html" %}
+
+{% block title %}Activity Logs - Stock Management{% endblock %}
+
+{% block extra_css %}
+<style>
+.log-image-thumb {
+            width: 40px;
+            height: 40px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 2px solid #ddd;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .log-image-thumb:hover {
+            transform: scale(1.2);
+            border-color: #007bff;
+        }
+        .no-image-thumb {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(45deg, #f0f0f0 25%, transparent 25%);
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            color: #999;
+        }
+        .change-positive {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .change-negative {
+            color: #ffc107;
+            font-weight: bold;
+        }
+        .change-neutral {
+            color: #6c757d;
+        }
+        .operation-badge {
+            font-size: 1.2rem;
+            cursor: help;
+        }
+        .log-row {
+            transition: background-color 0.2s;
+        }
+        .log-row:hover {
+            background-color: #f8f9fa;
+        }
+        .stats-card {
+            transition: transform 0.2s;
+        }
+        .stats-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+        }
+        .filter-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .log-time {
+            font-size: 0.85rem;
+            color: #6c757d;
+        }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1>📊 Stock Activity Logs</h1>
+                    <a href="{{ url_for('export_logs') }}" class="btn btn-success">
+                        📥 Export to Excel
+                    </a>
+                </div>
+
+                <!-- Statistics Cards -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card stats-card bg-primary text-white">
+                            <div class="card-body text-center">
+                                <h2>{{ stats.total_logs }}</h2>
+                                <small>🔄 Total Logs</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card stats-card bg-success text-white">
+                            <div class="card-body text-center">
+                                <h2>+{{ stats.total_added }}</h2>
+                                <small>➕ Stock Added</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card stats-card bg-warning text-white">
+                            <div class="card-body text-center">
+                                <h2>-{{ stats.total_removed }}</h2>
+                                <small>➖ Stock Removed</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card stats-card bg-info text-white">
+                            <div class="card-body text-center">
+                                <h2>{{ stats.logs_today }}</h2>
+                                <small>📅 Logs Today</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filters Section -->
+                <div class="filter-section">
+                    <form method="GET" action="{{ url_for('logs') }}">
+                        <div class="row align-items-end g-3">
+                            <div class="col-md-3">
+                                <label for="operation" class="form-label">🔖 Operation Type</label>
+                                <select class="form-select" id="operation" name="operation">
+                                    {% for op_type in operation_types %}
+                                        <option value="{{ op_type }}" {% if operation_filter == op_type %}selected{% endif %}>
+                                            {{ op_type }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="date_from" class="form-label">📅 From Date</label>
+                                <input type="date" class="form-control" id="date_from" name="date_from" value="{{ date_from }}">
+                            </div>
+                            <div class="col-md-3">
+                                <label for="date_to" class="form-label">📅 To Date</label>
+                                <input type="date" class="form-control" id="date_to" name="date_to" value="{{ date_to }}">
+                            </div>
+                            <div class="col-md-3">
+                                <button type="submit" class="btn btn-primary w-100">🔍 Apply Filters</button>
+                            </div>
+                        </div>
+                        <div class="row mt-3">
+                            <div class="col-md-9">
+                                <input type="text" class="form-control" name="search" placeholder="🔍 Search by Product Code, Brand, Color, or Type..." value="{{ search_term }}">
+                            </div>
+                            <div class="col-md-3">
+                                <a href="{{ url_for('logs') }}" class="btn btn-outline-secondary w-100">🔄 Reset Filters</a>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Logs Table -->
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">📜 Activity Log ({{ logs|length }} entries)</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        {% if logs %}
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0">
+                                    <thead class="table-dark">
+                                        <tr>
+                                            <th style="width: 12%;">Date & Time</th>
+                                            <th style="width: 20%;">Product</th>
+                                            <th style="width: 15%;">Color</th>
+                                            <th style="width: 8%;">Old</th>
+                                            <th style="width: 8%;">New</th>
+                                            <th style="width: 10%;">Change</th>
+                                            <th style="width: 12%;">Source</th>
+                                            <th style="width: 10%;">Operation</th>
+                                            <th style="width: 5%;">User</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for log in logs %}
+                                            <tr class="log-row">
+                                                <!-- Date & Time -->
+                                                <td>
+                                                    {% if log[16] %}
+                                                        {% set dt = log[16]|string %}
+                                                        <strong>{{ dt[:10] }}</strong><br>
+                                                        <span class="log-time">{{ dt[11:19] }}</span>
+                                                    {% else %}
+                                                        <span class="text-muted">N/A</span>
+                                                    {% endif %}
+                                                </td>
+                                                
+                                                <!-- Product -->
+                                                <td>
+                                                    <strong class="text-primary">{{ log[4] or 'N/A' }}</strong><br>
+                                                    <small class="text-muted">{{ log[5] or 'N/A' }}</small><br>
+                                                    <span class="badge bg-info">{{ log[6] or 'N/A' }}</span>
+                                                </td>
+                                                
+                                                <!-- Color with Image -->
+                                                <td>
+                                                    <div class="d-flex align-items-center">
+                                                        {% if log[8] %}
+                                                            <img src="{{ log[8] }}" alt="{{ log[7] }}" class="log-image-thumb me-2" onclick="openImageInNewTab('{{ log[8] }}')" title="Click to view full size">
+                                                        {% else %}
+                                                            <div class="no-image-thumb me-2" title="No image">📷</div>
+                                                        {% endif %}
+                                                        <span class="fw-bold">{{ log[7] or 'N/A' }}</span>
+                                                    </div>
+                                                </td>
+                                                
+                                                <!-- Old Value -->
+                                                <td class="text-center">
+                                                    {% if log[9] is not none %}
+                                                        <span class="badge bg-secondary">{{ log[9] }}</span>
+                                                    {% else %}
+                                                        <span class="text-muted">-</span>
+                                                    {% endif %}
+                                                </td>
+                                                
+                                                <!-- New Value -->
+                                                <td class="text-center">
+                                                    {% if log[10] is not none %}
+                                                        <span class="badge bg-primary">{{ log[10] }}</span>
+                                                    {% else %}
+                                                        <span class="text-muted">-</span>
+                                                    {% endif %}
+                                                </td>
+                                                
+                                                <!-- Change -->
+                                                <td class="text-center">
+                                                    {% if log[11] is not none %}
+                                                        {% if log[11] > 0 %}
+                                                            <span class="change-positive">+{{ log[11] }} ✅</span>
+                                                        {% elif log[11] < 0 %}
+                                                            <span class="change-negative">{{ log[11] }} ⚠️</span>
+                                                        {% else %}
+                                                            <span class="change-neutral">0 ➖</span>
+                                                        {% endif %}
+                                                    {% else %}
+                                                        <span class="text-muted">-</span>
+                                                    {% endif %}
+                                                </td>
+                                                
+                                                <!-- Source Page -->
+                                                <td>
+                                                    <span class="badge bg-secondary">{{ log[14] or 'N/A' }}</span>
+                                                </td>
+                                                
+                                                <!-- Operation -->
+                                                <td>
+                                                    <span class="operation-badge" title="{{ log[1] }}">
+                                                        {% if log[1] == 'Stock Update' %}
+                                                            📝
+                                                        {% elif log[1] == 'Bulk Update' %}
+                                                            📦
+                                                        {% elif log[1] == 'Product Added' %}
+                                                            ➕
+                                                        {% elif log[1] == 'Product Deleted' %}
+                                                            🗑️
+                                                        {% elif log[1] == 'Image Updated' %}
+                                                            📷
+                                                        {% else %}
+                                                            ❓
+                                                        {% endif %}
+                                                    </span>
+                                                    <small class="d-block">{{ log[1] }}</small>
+                                                </td>
+                                                
+                                                <!-- User -->
+                                                <td class="text-center">
+                                                    <small>{{ log[12] or 'Admin' }}</small>
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <div class="text-center py-5">
+                                <h4>📭 No logs found</h4>
+                                <p class="text-muted">Try adjusting your filters or perform some stock operations.</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Load More Button (Optional) -->
+                {% if logs|length >= 100 %}
+                    <div class="text-center mt-4">
+                        <button class="btn btn-outline-primary" onclick="alert('Load more functionality - coming soon!')">
+                            Load More Logs
+                        </button>
+                    </div>
+                {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function openImageInNewTab(imageUrl) {
+            if (imageUrl) {
+                window.open(imageUrl, '_blank');
+            }
+        }
+
+        // Auto-set today's date as default if no filters
+        document.addEventListener('DOMContentLoaded', function() {
+            const dateFrom = document.getElementById('date_from');
+            const dateTo = document.getElementById('date_to');
+            
+            // Only set dates if both are empty (first visit)
+            if (!dateFrom.value && !dateTo.value) {
+                const today = new Date().toISOString().split('T')[0];
+                dateTo.value = today;
+                
+                // Set date_from to 7 days ago
+                const weekAgo = new Date();
+                weekAgo.setDate(weekAgo.getDate() - 7);
+                dateFrom.value = weekAgo.toISOString().split('T')[0];
+            }
+        });
+</script>
+{% endblock %}

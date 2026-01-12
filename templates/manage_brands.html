@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Brands - Stock Management{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1>🏷️ Manage Brands</h1>
+                </div>
+
+                <div class="row">
+                    <!-- Add New Brand -->
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5>➕ Add New Brand</h5>
+                            </div>
+                            <div class="card-body">
+                                <form method="POST" action="/add_brand">
+                                    <div class="mb-3">
+                                        <label for="brand_name" class="form-label">Brand Name</label>
+                                        <input type="text" class="form-control" id="brand_name" name="brand_name" 
+                                               placeholder="e.g., Chanel" required>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary w-100">Add Brand</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Existing Brands -->
+                    <div class="col-md-8">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5>📋 Existing Brands ({{ brands|length }})</h5>
+                            </div>
+                            <div class="card-body">
+                                {% if brands %}
+                                <div class="table-responsive">
+                                    <table class="table table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>ID</th>
+                                                <th>Brand Name</th>
+                                                <th>Created Date</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for brand in brands %}
+                                            <tr>
+                                                <td>{{ brand[0] }}</td>
+                                                <td><strong>{{ brand[1] }}</strong></td>
+                                                <td>{{ brand[2][:10] if brand[2] else 'N/A' }}</td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-outline-primary" 
+                                                            onclick="editBrand({{ brand[0] }}, '{{ brand[1] }}')">
+                                                        ✏️ Edit
+                                                    </button>
+                                                    <button class="btn btn-sm btn-outline-danger" 
+                                                            onclick="deleteBrand({{ brand[0] }}, '{{ brand[1] }}')">
+                                                        🗑️ Delete
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {% else %}
+                                <p class="text-center text-muted">No brands found. Add your first brand!</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Edit Brand Modal -->
+    <div class="modal fade" id="editBrandModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">✏️ Edit Brand</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <form id="editBrandForm" method="POST">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="edit_brand_name" class="form-label">Brand Name</label>
+                            <input type="text" class="form-control" id="edit_brand_name" name="brand_name" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Delete Brand Modal -->
+    <div class="modal fade" id="deleteBrandModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">🗑️ Delete Brand</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete the brand <strong id="deleteBrandName"></strong>?</p>
+                    <p class="text-danger"><small>This action cannot be undone!</small></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <form id="deleteBrandForm" method="POST" style="display: inline;">
+                        <button type="submit" class="btn btn-danger">Delete Brand</button>
+                    </form>
+                </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function editBrand(brandId, brandName) {
+            document.getElementById('edit_brand_name').value = brandName;
+            document.getElementById('editBrandForm').action = '/edit_brand/' + brandId;
+            new bootstrap.Modal(document.getElementById('editBrandModal')).show();
+        }
+        
+        function deleteBrand(brandId, brandName) {
+            document.getElementById('deleteBrandName').textContent = brandName;
+            document.getElementById('deleteBrandForm').action = '/delete_brand/' + brandId;
+            new bootstrap.Modal(document.getElementById('deleteBrandModal')).show();
+        }
+</script>
+{% endblock %}

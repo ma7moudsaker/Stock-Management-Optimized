@@ -1,0 +1,408 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Stock Management{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stats-card {
+        border-radius: 15px;
+        border: none;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        overflow: hidden;
+    }
+    
+    .stats-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 15px rgba(0,0,0,0.2);
+    }
+    
+    .icon-box {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.8rem;
+        margin-bottom: 1rem;
+    }
+    
+    .gradient-bg-1 { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    .gradient-bg-2 { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+    .gradient-bg-3 { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
+    
+    .chart-container {
+        position: relative;
+        height: 300px;
+        margin-bottom: 2rem;
+    }
+    
+    .table-container {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Welcome Header -->
+    <div class="mb-4">
+        <h2 class="mb-1">👋 Welcome back, {{ session.get('full_name', 'User') }}!</h2>
+        <p class="text-muted mb-0">Here's what's happening with your inventory today.</p>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="row mb-4">
+        <div class="col-md-{{ '4' if is_admin else '6' }} mb-3">
+            <div class="card stats-card gradient-bg-1 text-white">
+                <div class="card-body text-center">
+                    <div class="icon-box mx-auto bg-white bg-opacity-25">
+                        <i class="fas fa-boxes"></i>
+                    </div>
+                    <h2 class="mb-0">{{ stats.total_products }}</h2>
+                    <small>Total Products</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-{{ '4' if is_admin else '6' }} mb-3">
+            <div class="card stats-card gradient-bg-2 text-white">
+                <div class="card-body text-center">
+                    <div class="icon-box mx-auto bg-white bg-opacity-25">
+                        <i class="fas fa-cubes"></i>
+                    </div>
+                    <h2 class="mb-0">{{ "{:,}".format(stats.total_stock_qty) }}</h2>
+                    <small>Total Stock Quantity</small>
+                </div>
+            </div>
+        </div>
+        
+        {% if is_admin %}
+        <div class="col-md-4 mb-3">
+            <div class="card stats-card gradient-bg-3 text-white">
+                <div class="card-body text-center">
+                    <div class="icon-box mx-auto bg-white bg-opacity-25">
+                        <i class="fas fa-dollar-sign"></i>
+                    </div>
+                    <h2 class="mb-0">{{ "{:,.0f}".format(stats.stock_value) }}</h2>
+                    <small>Stock Value (EGP)</small>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Main Content Row -->
+    <div class="row">
+        <!-- Left Column (Charts & Table) -->
+        <div class="col-md-8">
+            
+            <!-- Stock Quantity Trend -->
+            <div class="card mb-4">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fas fa-chart-line"></i> Stock Quantity Trend (Last 30 Days)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="stockQuantityChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stock Value Trend (Admins Only) -->
+            {% if is_admin %}
+            <div class="card mb-4">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fas fa-chart-area"></i> Stock Value Trend (Last 30 Days)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="stockValueChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Most Updated Products -->
+            <div class="card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fas fa-fire"></i> Most Updated Products (Last 30 Days)</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-container">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Product Code</th>
+                                    <th>Brand</th>
+                                    <th>Color</th>
+                                    <th class="text-center">Additions</th>
+                                    <th class="text-center">Removals</th>
+                                    <th>Last Update</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if most_updated %}
+                                    {% for product in most_updated %}
+                                    <tr>
+                                        <td><strong>{{ product[0] }}</strong></td>
+                                        <td>{{ product[1] }}</td>
+                                        <td>{{ product[2] }}</td>
+                                        <td class="text-center">
+                                            <span class="badge bg-success">+{{ product[3] }}</span>
+                                        </td>
+                                        <td class="text-center">
+                                            <span class="badge bg-danger">-{{ product[4] }}</span>
+                                        </td>
+                                        <td>
+                                            <small class="text-muted">{{ product[5][:16] }}</small>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="6" class="text-center text-muted py-4">
+                                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                                            No stock updates in the last 30 days
+                                        </td>
+                                    </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Right Column (Sidebar) -->
+        <div class="col-md-4">
+            
+            <!-- Top Brands -->
+            <div class="card mb-4">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fas fa-star"></i> Top 5 Brands</h5>
+                </div>
+                <div class="card-body">
+                    {% if top_brands %}
+                        {% for brand in top_brands %}
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between mb-1">
+                                <strong>{{ brand[0] }}</strong>
+                                <span class="badge bg-primary">{{ brand[1] }}</span>
+                            </div>
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar bg-primary" 
+                                     style="width: {{ (brand[1] / top_brands[0][1] * 100)|round }}%">
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted text-center mb-0">No data available</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Top 10 Products by Stock -->
+            <div class="card mb-4">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fas fa-trophy"></i> Top 10 Products in Stock</h5>
+                </div>
+                <div class="card-body" style="max-height: 450px; overflow-y: auto;">
+                    {% if top_products_stock %}
+                        {% for product in top_products_stock %}
+                        <div class="mb-3 pb-2 {% if not loop.last %}border-bottom{% endif %}">
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <div style="flex: 1; min-width: 0;">
+                                    <strong class="text-truncate d-block">{{ product[0] }}</strong>
+                                    <small class="text-muted">{{ product[1] }}</small>
+                                </div>
+                                <span class="badge bg-success ms-2" style="font-size: 0.85rem;">
+                                    {{ product[4] }}
+                                </span>
+                            </div>
+                            <div class="progress" style="height: 6px;">
+                                <div class="progress-bar bg-success" 
+                                     style="width: {{ (product[4] / top_products_stock[0][4] * 100)|round }}%">
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted text-center mb-0">No data available</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Products by Category -->
+            <div class="card mb-4">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fas fa-chart-pie"></i> Products by Category</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 250px;">
+                        <canvas id="categoryPieChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Info -->
+            <div class="card">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fas fa-info-circle"></i> System Info</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Active Brands:</span>
+                        <strong>{{ system_counts.brands }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Active Categories:</span>
+                        <strong>{{ system_counts.categories }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Product Types:</span>
+                        <strong>{{ system_counts.types }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">Colors in Use:</span>
+                        <strong>{{ system_counts.colors }}</strong>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    // Stock Quantity Chart
+    const qtyCtx = document.getElementById('stockQuantityChart');
+    if (qtyCtx) {
+        const qtyData = {{ stock_qty_trend|tojson|safe }};
+        
+        new Chart(qtyCtx, {
+            type: 'line',
+            data: {
+                labels: qtyData.dates || [],
+                datasets: [{
+                    label: 'Stock Quantity',
+                    data: qtyData.quantities || [],
+                    borderColor: 'rgb(79, 172, 254)',
+                    backgroundColor: 'rgba(79, 172, 254, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    }
+
+    {% if is_admin %}
+    // Stock Value Chart (Admin only)
+    const valueCtx = document.getElementById('stockValueChart');
+    if (valueCtx) {
+        const valueData = {{ stock_value_trend|tojson|safe }};
+        
+        new Chart(valueCtx, {
+            type: 'line',
+            data: {
+                labels: valueData.dates || [],
+                datasets: [{
+                    label: 'Stock Value (EGP)',
+                    data: valueData.values || [],
+                    borderColor: 'rgb(67, 233, 123)',
+                    backgroundColor: 'rgba(67, 233, 123, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return value.toLocaleString() + ' EGP';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    {% endif %}
+
+    // Category Pie Chart
+    const pieCtx = document.getElementById('categoryPieChart');
+    if (pieCtx) {
+        const categoryData = {{ products_by_category|tojson|safe }};
+        
+        if (categoryData && categoryData.length > 0) {
+            new Chart(pieCtx, {
+                type: 'pie',
+                data: {
+                    labels: categoryData.map(item => item[0]),
+                    datasets: [{
+                        data: categoryData.map(item => item[1]),
+                        backgroundColor: [
+                            'rgba(102, 126, 234, 0.8)',
+                            'rgba(237, 100, 166, 0.8)',
+                            'rgba(255, 159, 64, 0.8)',
+                            'rgba(75, 192, 192, 0.8)',
+                            'rgba(153, 102, 255, 0.8)'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                    return context.label + ': ' + context.parsed + ' (' + percentage + '%)';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+</script>
+{% endblock %}

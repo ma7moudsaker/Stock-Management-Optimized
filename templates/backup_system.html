@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block title %}Backup System - Stock Management{% endblock %}
+
+{% block extra_css %}
+<style>
+    .backup-card {
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease;
+    }
+    
+    .backup-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 12px rgba(0,0,0,0.15);
+    }
+    
+    .icon-box {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2.5rem;
+        margin: 0 auto 1rem;
+    }
+    
+    .icon-box.primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    
+    .icon-box.success {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        color: white;
+    }
+    
+    .icon-box.warning {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+    }
+    
+    .backup-history-table {
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    
+    .backup-history-table thead {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    
+    .status-badge {
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    
+    .status-success {
+        background-color: #d4edda;
+        color: #155724;
+    }
+    
+    .loading-spinner {
+        display: none;
+        text-align: center;
+        margin: 20px 0;
+    }
+    
+    .loading-spinner.active {
+        display: block;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">💾 Backup System</h2>
+            <p class="text-muted mb-0">Manage and protect your data with {{ service }} backups</p>
+        </div>
+        <div>
+            <a href="{{ url_for('create_backup') }}" class="btn btn-primary">
+                <i class="fas fa-cloud-upload-alt"></i> Create Backup Now
+            </a>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-4 mb-3">
+            <div class="card backup-card text-center">
+                <div class="card-body p-4">
+                    <div class="icon-box primary">
+                        <i class="fas fa-database"></i>
+                    </div>
+                    <h3 class="mb-2">{{ backups|length }}</h3>
+                    <p class="text-muted mb-0">Total Backups</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4 mb-3">
+            <div class="card backup-card text-center">
+                <div class="card-body p-4">
+                    <div class="icon-box success">
+                        <i class="fas fa-cloud"></i>
+                    </div>
+                    <h3 class="mb-2">{{ service }}</h3>
+                    <p class="text-muted mb-0">Backup Service</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4 mb-3">
+            <div class="card backup-card text-center">
+                <div class="card-body p-4">
+                    <div class="icon-box warning">
+                        <i class="fas fa-clock"></i>
+                    </div>
+                    <h3 class="mb-2">{{ backups[0].date if backups else 'Never' }}</h3>
+                    <p class="text-muted mb-0">Last Backup</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backup History -->
+    <div class="card backup-card">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-history"></i> Backup History</h5>
+            <button class="btn btn-sm btn-outline-primary" onclick="location.reload()">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover backup-history-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Backup Name</th>
+                            <th>Date</th>
+                            <th>Size</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if backups %}
+                            {% for backup in backups %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td>
+                                    <i class="fas fa-file-archive text-primary"></i>
+                                    {{ backup.name }}
+                                </td>
+                                <td>{{ backup.date }}</td>
+                                <td>{{ backup.size }}</td>
+                                <td>
+                                    <a href="{{ url_for('restore_backup', backup_name=backup.name) }}" 
+                                       class="btn btn-sm btn-success"
+                                       onclick="return confirm('⚠️ This will restore your database to this backup point. Continue?')">
+                                        <i class="fas fa-undo"></i> Restore
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-5">
+                                    <i class="fas fa-inbox fa-3x mb-3 d-block"></i>
+                                    <p class="mb-3">No backups found. Create your first backup to protect your data!</p>
+                                    <a href="{{ url_for('create_backup') }}" class="btn btn-primary">
+                                        <i class="fas fa-cloud-upload-alt"></i> Create First Backup
+                                    </a>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

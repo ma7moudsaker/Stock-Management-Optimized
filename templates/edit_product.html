@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Product - Stock Management{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1>✏️ Edit Product</h1>
+                    <a href="/product_details/{{ details.product[0] }}" class="btn btn-outline-secondary">← Back to Product Details</a>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h5>📝 Product Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" id="editProductForm">
+                            <div class="row">
+                                <!-- Product Code (editable with warning) -->
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label for="product_code" class="form-label">Product Code *</label>
+                                        <input type="text" class="form-control" id="product_code" name="product_code" 
+                                               value="{{ details.product[1] }}" required>
+                                        <small class="text-warning">⚠️ Changing code will affect image organization</small>
+                                    </div>
+                                </div>
+                                
+                                <!-- Brand (editable dropdown) -->
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label for="brand_id" class="form-label">Brand *</label>
+                                        <select class="form-control" id="brand_id" name="brand_id" required>
+                                            {% for brand in brands %}
+                                            <option value="{{ brand[0] }}" {% if brand[1] == details.product[7] %}selected{% endif %}>
+                                                {{ brand[1] }}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                <!-- Product Type (editable dropdown) -->
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label for="product_type_id" class="form-label">Type *</label>
+                                        <select class="form-control" id="product_type_id" name="product_type_id" required>
+                                            {% for ptype in product_types %}
+                                            <option value="{{ ptype[0] }}" {% if ptype[1] == details.product[8] %}selected{% endif %}>
+                                                {{ ptype[1] }}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                <!-- Trader Category (editable dropdown) -->
+                                <div class="col-md-3">
+                                    <div class="mb-3">
+                                        <label for="trader_category" class="form-label">Category *</label>
+                                        <select class="form-control" id="trader_category" name="trader_category" required>
+                                            {% for cat in trader_categories %}
+                                            <option value="{{ cat[1] }}" {% if cat[1] == details.product[2] %}selected{% endif %}>
+                                                {{ cat[1] }} - {{ cat[2] }}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <!-- Product Size -->
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label for="product_size" class="form-label">Size</label>
+                                        <input type="text" class="form-control" id="product_size" name="product_size" 
+                                               value="{{ details.product[3] or '' }}" 
+                                               placeholder="20×22×5" pattern="[0-9×*\s]+" title="Use format: 20×22×5 or 15*22">
+                                        <small class="text-muted">e.g., 20×22×5</small>
+                                    </div>
+                                </div>
+                                
+                                <!-- Wholesale Price -->
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label for="wholesale_price" class="form-label">Wholesale Price (EGP)</label>
+                                        <input type="number" step="0.01" class="form-control" id="wholesale_price" name="wholesale_price" 
+                                               value="{{ details.product[4] }}" required onchange="calculateProfit()">
+                                    </div>
+                                </div>
+                                
+                                <!-- Retail Price -->
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label for="retail_price" class="form-label">Retail Price (EGP)</label>
+                                        <input type="number" step="0.01" class="form-control" id="retail_price" name="retail_price" 
+                                               value="{{ details.product[5] }}" required onchange="calculateProfit()">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Profit Display -->
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">Profit Margin</label>
+                                        <div class="form-control bg-light" id="profit_display">
+                                            <span id="profit_amount">{{ "%.2f"|format(details.product[5]|float - details.product[4]|float) }} EGP</span> 
+                                            (<span id="profit_percentage">{{ "%.1f"|format(((details.product[5]|float - details.product[4]|float) / details.product[5]|float) * 100) }}%</span>)
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">Created Date</label>
+                                        <div class="form-control bg-light">
+                                            {{ details.product[6][:16] if details.product[6] else 'N/A' }}
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="col-md-4">
+                                    <div class="mb-3">
+                                        <label class="form-label">Supplier</label>
+                                        <div class="form-control bg-light">
+                                            {{ details.product[9] if details.product[9] else 'Default Supplier' }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Current Colors and Stock (Read-only display) -->
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <div class="mb-3">
+                                        <label class="form-label">Current Colors & Stock (Read-only)</label>
+                                        <div class="border rounded p-3 bg-light">
+                                            {% if details.color_stocks %}
+                                                <div class="row">
+                                                    {% for color in details.color_stocks %}
+                                                    <div class="col-md-3 mb-2">
+                                                        <div class="d-flex align-items-center">
+                                                            <div style="width: 20px; height: 20px; background-color: {{ color[3] }}; 
+                                                                        border: 1px solid #ccc; border-radius: 3px; margin-right: 8px;"></div>
+                                                            <span class="badge bg-secondary me-2">{{ color[2] }}</span>
+                                                            <span class="badge bg-info">{{ color[4] }} pcs</span>
+                                                        </div>
+                                                    </div>
+                                                    {% endfor %}
+                                                </div>
+                                            {% else %}
+                                                <small class="text-muted">No colors available</small>
+                                            {% endif %}
+                                        </div>
+                                        <small class="text-muted">To edit colors or stock, use the Product Details page</small>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Current Tags (Read-only display) -->
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <div class="mb-3">
+                                        <label class="form-label">Current Tags (Read-only)</label>
+                                        <div class="border rounded p-3 bg-light">
+                                            {% if details.tags %}
+                                                {% for tag in details.tags %}
+                                                    <span class="badge me-2" style="background-color: {{ tag[3] }}; color: white;">
+                                                        {{ tag[1] }}
+                                                    </span>
+                                                {% endfor %}
+                                            {% else %}
+                                                <small class="text-muted">No tags assigned</small>
+                                            {% endif %}
+                                        </div>
+                                        <small class="text-muted">Tag management coming soon</small>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Submit Buttons -->
+                            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                <a href="/product_details/{{ details.product[0] }}" class="btn btn-secondary me-md-2">Cancel</a>
+                                <button type="submit" class="btn btn-primary">💾 Save Changes</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function calculateProfit() {
+            const wholesale = parseFloat(document.getElementById('wholesale_price').value) || 0;
+            const retail = parseFloat(document.getElementById('retail_price').value) || 0;
+            
+            if (wholesale > 0 && retail > 0) {
+                const profit = retail - wholesale;
+                const percentage = (profit / retail * 100).toFixed(1);
+                
+                document.getElementById('profit_amount').textContent = `${profit.toFixed(2)} EGP`;
+                document.getElementById('profit_percentage').textContent = `${percentage}%`;
+                
+                // Color coding for profit margin
+                const profitDisplay = document.getElementById('profit_display');
+                if (percentage < 20) {
+                    profitDisplay.style.backgroundColor = '#f8d7da';
+                } else if (percentage < 40) {
+                    profitDisplay.style.backgroundColor = '#fff3cd';
+                } else {
+                    profitDisplay.style.backgroundColor = '#d1edff';
+                }
+            } else {
+                document.getElementById('profit_amount').textContent = '0 EGP';
+                document.getElementById('profit_percentage').textContent = '0%';
+                document.getElementById('profit_display').style.backgroundColor = '#f8f9fa';
+            }
+        }
+        
+        // Calculate profit on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            calculateProfit();
+        });
+</script>
+{% endblock %}
