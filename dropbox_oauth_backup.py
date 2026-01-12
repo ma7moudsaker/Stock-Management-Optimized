@@ -13,23 +13,27 @@ class DropboxOAuthBackup:
         self.access_token = None
         self.dbx = None
         self.max_backups = 10
-                # فحص فوري للمتغيرات
-        print(f"🔍 Environment Variables Check:")
-        print(f"  - DROPBOX_APP_KEY: {'✅ موجود' if self.app_key else '❌ غير موجود'}")
-        print(f"  - DROPBOX_APP_SECRET: {'✅ موجود' if self.app_secret else '❌ غير موجود'}")  
-        print(f"  - DROPBOX_REFRESH_TOKEN: {'✅ موجود' if self.refresh_token else '❌ غير موجود'}")
         
-
+        # ✅ حدد المسار للـ Backups
+        self.backup_folder = '/Stock_Backups'
+        
+        # فحص فوري للمتغيرات
+        print(f"🔍 Environment Variables Check:")
+        print(f"   - DROPBOX_APP_KEY: {'✅ موجود' if self.app_key else '❌ غير موجود'}")
+        print(f"   - DROPBOX_APP_SECRET: {'✅ موجود' if self.app_secret else '❌ غير موجود'}")
+        print(f"   - DROPBOX_REFRESH_TOKEN: {'✅ موجود' if self.refresh_token else '❌ غير موجود'}")
+        print(f"   - Backup Folder: {self.backup_folder}")
+        
         if self.refresh_token and self.app_key and self.app_secret:
             self.refresh_access_token()
         else:
             print("⚠️ مطلوب DROPBOX_APP_KEY, DROPBOX_APP_SECRET, DROPBOX_REFRESH_TOKEN")
-    
+            
         if not all([self.app_key, self.app_secret, self.refresh_token]):
             print("⚠️ بعض المتغيرات مفقودة - النسخ الاحتياطية ستعمل محلياً فقط")
             self.dbx = None
             return
-
+    
     def refresh_access_token(self):
         """تجديد Access Token باستخدام Refresh Token مع تشخيص مفصل"""
         try:
@@ -37,22 +41,25 @@ class DropboxOAuthBackup:
             if not self.app_key:
                 print("❌ DROPBOX_APP_KEY غير موجود")
                 return False
+            
             if not self.app_secret:
                 print("❌ DROPBOX_APP_SECRET غير موجود")
                 return False
+            
             if not self.refresh_token:
                 print("❌ DROPBOX_REFRESH_TOKEN غير موجود")
                 return False
             
             print(f"🔄 محاولة تجديد التوكن...")
             print(f"📝 App Key: {self.app_key[:8]}..." if self.app_key else "❌ App Key فارغ")
-            print(f"📝 App Secret: {self.app_secret[:8]}..." if self.app_secret else "❌ App Secret فارغ") 
+            print(f"📝 App Secret: {self.app_secret[:8]}..." if self.app_secret else "❌ App Secret فارغ")
             print(f"📝 Refresh Token: {self.refresh_token[:20]}..." if self.refresh_token else "❌ Refresh Token فارغ")
             
             url = 'https://api.dropboxapi.com/oauth2/token'
             headers = {
                 'Content-Type': 'application/x-www-form-urlencoded'
             }
+            
             data = {
                 'grant_type': 'refresh_token',
                 'refresh_token': self.refresh_token,
@@ -86,7 +93,6 @@ class DropboxOAuthBackup:
                             print("💡 الـ Refresh Token منتهي الصلاحية أو غير صحيح")
                         elif 'invalid_client' in error_description:
                             print("💡 App Key أو App Secret غير صحيح")
-                            
                     except:
                         print("🔍 لا يمكن تحليل تفاصيل الخطأ")
                 
@@ -95,7 +101,7 @@ class DropboxOAuthBackup:
         except Exception as e:
             print(f"❌ خطأ في الاتصال بـ Dropbox API: {e}")
             return False
-        
+    
     def ensure_valid_token(self):
         """التأكد من صحة التوكن قبل أي عملية"""
         if not self.dbx:
@@ -136,6 +142,7 @@ class DropboxOAuthBackup:
             ]
             
             total_records = 0
+            
             for table_name in important_tables:
                 try:
                     cursor.execute(f"SELECT * FROM {table_name}")
@@ -147,6 +154,7 @@ class DropboxOAuthBackup:
                     print(f"⚠️ تخطي جدول {table_name}: {e}")
             
             conn.close()
+            
             print(f"📊 إجمالي السجلات المُصدرة: {total_records}")
             return backup_data
             
@@ -169,19 +177,28 @@ class DropboxOAuthBackup:
             
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             filename = f'stock_backup_{timestamp}.json'
-            
             json_content = json.dumps(backup_data, ensure_ascii=False, indent=2)
-            content_size = len(json_content.encode('utf-8'))
             
+            content_size = len(json_content.encode('utf-8'))
             print(f"📦 حجم النسخة الاحتياطية: {content_size / 1024:.1f} KB")
             
+            # ✅ إنشاء المجلد لو مش موجود
+            try:
+                self.dbx.files_get_metadata(self.backup_folder)
+                print(f"📁 المجلد {self.backup_folder} موجود")
+            except dropbox.exceptions.ApiError:
+                print(f"📁 إنشاء مجلد: {self.backup_folder}")
+                self.dbx.files_create_folder_v2(self.backup_folder)
+            
+            # ✅ رفع الملف في المجلد المحدد
             self.dbx.files_upload(
                 json_content.encode('utf-8'),
-                f'/{filename}',
+                f'{self.backup_folder}/{filename}',
                 mode=dropbox.files.WriteMode.overwrite
             )
             
-            print(f"✅ تم رفع النسخة الاحتياطية بنجاح: {filename}")
+            print(f"✅ تم رفع النسخة الاحتياطية بنجاح: {self.backup_folder}/{filename}")
+            
             self.cleanup_old_backups()
             return True
             
@@ -191,6 +208,7 @@ class DropboxOAuthBackup:
                 return self.create_backup()  # إعادة المحاولة
             else:
                 return self.create_local_backup()
+                
         except Exception as e:
             print(f"❌ خطأ عام: {e}")
             return self.create_local_backup()
@@ -201,9 +219,10 @@ class DropboxOAuthBackup:
             return []
         
         try:
-            result = self.dbx.files_list_folder('')
-            backups = []
+            # ✅ قراءة من المجلد المحدد
+            result = self.dbx.files_list_folder(self.backup_folder)
             
+            backups = []
             for entry in result.entries:
                 if isinstance(entry, dropbox.files.FileMetadata) and entry.name.startswith('stock_backup_'):
                     backups.append({
@@ -216,11 +235,21 @@ class DropboxOAuthBackup:
             backups.sort(key=lambda x: x['name'], reverse=True)
             return backups
             
+        except dropbox.exceptions.ApiError as e:
+            # ✅ لو المجلد مش موجود
+            if hasattr(e.error, 'is_path') and e.error.is_path():
+                print(f"📁 المجلد {self.backup_folder} غير موجود - سيتم إنشاؤه عند أول backup")
+                return []
+            else:
+                print(f"❌ خطأ في جلب قائمة النسخ: {e}")
+                return []
+                
         except dropbox.exceptions.AuthError:
             print("🔄 خطأ في المصادقة - محاولة تجديد التوكن...")
             if self.refresh_access_token():
                 return self.list_backups()  # إعادة المحاولة
             return []
+            
         except Exception as e:
             print(f"❌ خطأ في جلب قائمة النسخ: {e}")
             return []
@@ -231,7 +260,7 @@ class DropboxOAuthBackup:
             if not self.dbx:
                 print("❌ غير متصل بـ Dropbox")
                 return False
-
+            
             # اختيار النسخة الاحتياطية
             if not backup_name:
                 backups = self.list_backups()
@@ -239,36 +268,36 @@ class DropboxOAuthBackup:
                     print("❌ لا توجد نسخ احتياطية متوفرة")
                     return False
                 backup_name = backups[0]['name']
-
-            backup_path = f"/{backup_name}"
-            print(f"🔄 استرجاع من النسخة: {backup_name}")
-
+            
+            # ✅ المسار الكامل
+            backup_path = f"{self.backup_folder}/{backup_name}"
+            print(f"🔄 استرجاع من النسخة: {backup_path}")
+            
             # تحميل الملف من Dropbox
             _, response = self.dbx.files_download(backup_path)
             backup_data = json.loads(response.content.decode('utf-8'))
-
+            
             # استرجاع البيانات
             from database import StockDatabase
             db = StockDatabase()
             
             # استرجاع كل جدول
             tables_order = [
-                'brands', 'colors', 'product_types', 'trader_categories', 
-                'suppliers', 'tags', 'base_products', 'product_variants', 
+                'brands', 'colors', 'product_types', 'trader_categories',
+                'suppliers', 'tags', 'base_products', 'product_variants',
                 'color_images', 'product_tags'
             ]
-
+            
             total_restored = 0
+            
             for table_name in tables_order:
-                    if table_name in backup_data.get('tables', {}):  # ✅ صحيح
-                        table_data = backup_data['tables'][table_name]  # ✅ صحيح
+                if table_name in backup_data.get('tables', {}):
+                    table_data = backup_data['tables'][table_name]
                     
-                    # 🔧 هنا التصحيح المطلوب
+                    # معالجة أنواع البيانات المختلفة
                     if isinstance(table_data, list):
-                        # إذا كانت البيانات قائمة، نتعامل معها مباشرة
                         restored_count = self._restore_table_data(db, table_name, table_data)
                     elif isinstance(table_data, dict):
-                        # إذا كانت البيانات قاموس، نحولها لقائمة
                         rows = []
                         for row_data in table_data.values():
                             if isinstance(row_data, dict):
@@ -277,22 +306,22 @@ class DropboxOAuthBackup:
                     else:
                         print(f"⚠️ نوع بيانات غير مدعوم في جدول {table_name}: {type(table_data)}")
                         continue
-                        
+                    
                     total_restored += restored_count
                     print(f"✅ تم استرجاع {restored_count} سجل من جدول {table_name}")
-
+            
             print(f"🎉 تم استرجاع {total_restored} سجل بنجاح!")
             return True
-
+            
         except Exception as e:
             print(f"❌ خطأ في استرجاع النسخة الاحتياطية: {e}")
             return False
-        
+    
     def _restore_table_data(self, db, table_name, rows):
         """استرجاع بيانات جدول واحد"""
         if not rows:
             return 0
-            
+        
         conn = db.get_connection()
         cursor = conn.cursor()
         restored_count = 0
@@ -301,7 +330,7 @@ class DropboxOAuthBackup:
             for row in rows:
                 if not isinstance(row, dict):
                     continue
-                    
+                
                 # إنشاء استعلام INSERT
                 columns = list(row.keys())
                 placeholders = ', '.join(['?' for _ in columns])
@@ -318,83 +347,14 @@ class DropboxOAuthBackup:
             
             conn.commit()
             conn.close()
+            
             return restored_count
             
         except Exception as e:
             print(f"❌ خطأ في استرجاع جدول {table_name}: {e}")
             conn.close()
             return 0
-
-    def restore_data_to_database(self, backup_data):
-        """استرجاع البيانات لقاعدة البيانات مع معالجة أفضل للأخطاء"""
-        try:
-            conn = sqlite3.connect('stock_management.db')
-            cursor = conn.cursor()
-            
-            # مسح البيانات الحالية
-            for table_name in backup_data['tables'].keys():
-                try:
-                    cursor.execute(f"DELETE FROM {table_name}")
-                    print(f"🗑️ تم مسح جدول {table_name}")
-                except:
-                    pass
-            
-            # استرجاع البيانات
-            total_restored = 0
-            for table_name, rows in backup_data['tables'].items():
-                if not rows:
-                    continue
-                
-                try:
-                    # 🎯 التحقق من نوع البيانات
-                    if isinstance(rows, list) and len(rows) > 0:
-                        # إذا كانت البيانات في شكل list of tuples، نحولها لـ list of dicts
-                        if isinstance(rows[0], (list, tuple)):
-                            # نحصل على أسماء الأعمدة من الجدول
-                            cursor.execute(f"PRAGMA table_info({table_name})")
-                            columns_info = cursor.fetchall()
-                            column_names = [col[1] for col in columns_info]
-                            
-                            # نحول البيانات لـ dicts
-                            dict_rows = []
-                            for row in rows:
-                                if len(row) <= len(column_names):
-                                    dict_rows.append(dict(zip(column_names, row)))
-                            rows = dict_rows
-                        
-                        # إذا كانت البيانات دلوقتي في شكل list of dicts
-                        if isinstance(rows[0], dict):
-                            columns = list(rows.keys())
-                            placeholders = ', '.join(['?' for _ in columns])
-                            insert_sql = f"INSERT OR REPLACE INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
-                            
-                            for row in rows:
-                                values = [row[col] for col in columns]
-                                cursor.execute(insert_sql, values)
-                            
-                            print(f"✅ تم استرجاع {len(rows)} سجل لجدول {table_name}")
-                            total_restored += len(rows)
-                        else:
-                            print(f"⚠️ تخطي جدول {table_name}: نوع بيانات غير مدعوم")
-                    else:
-                        print(f"⚠️ تخطي جدول {table_name}: بيانات فارغة أو غير صحيحة")
-                        
-                except Exception as e:
-                    print(f"⚠️ خطأ في استرجاع جدول {table_name}: {e}")
-            
-            conn.commit()
-            conn.close()
-            
-            print(f"🎉 تم استرجاع {total_restored} سجل بنجاح!")
-            return True
-            
-        except Exception as e:
-            print(f"❌ خطأ في استرجاع البيانات: {e}")
-            if 'conn' in locals():
-                conn.rollback()
-                conn.close()
-            return False
-        
+    
     def cleanup_old_backups(self):
         """حذف النسخ القديمة الزائدة"""
         try:
