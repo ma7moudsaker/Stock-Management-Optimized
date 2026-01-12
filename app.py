@@ -279,13 +279,13 @@ def restore_on_startup():
                 print("⚠️ Logs table is empty. Attempting to restore from backup...")
                 try:
                     # List all log backups
-                    result = backup_system.dbx.files_list_folder('/logs_backups')
+                    result = backup_system.dbx.files_list_folder('/Stock_Backups')
                     if result.entries:
                         # Get latest backup
                         latest_backup = sorted(result.entries, key=lambda x: x.name, reverse=True)[0]
                         
                         # Download and restore
-                        _, response = backup_system.dbx.files_download(f'/logs_backups/{latest_backup.name}')
+                        _, response = backup_system.dbx.files_download(f'/Stock_Backups/{latest_backup.name}')
                         with open('temp_logs_restore.json', 'wb') as f:
                             f.write(response.content)
                         
@@ -310,7 +310,7 @@ def restore_on_startup():
 def auto_backup():
     """نسخ احتياطية تلقائية كل 6 ساعة"""
     while True:
-        time.sleep(21600)  # كل ساعة
+        time.sleep(21600)  # كل 6 ساعة
         print("🔄 إنشاء نسخة احتياطية تلقائية...")
         backup_system.create_backup()
 
@@ -332,7 +332,7 @@ def daily_logs_backup():
                         with open(backup_filename, 'rb') as f:
                             backup_system.dbx.files_upload(
                                 f.read(),
-                                f'/logs_backups/{backup_filename}',
+                                f'/Stock_Backups/{backup_filename}',
                                 mode=dropbox.files.WriteMode.overwrite
                             )
                         print(f"✅ Logs backup uploaded: {backup_filename}")
