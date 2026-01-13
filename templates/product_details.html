@@ -498,7 +498,7 @@ let currentColorId = null;
         
         function deleteProduct() {
             if (confirm('Are you sure you want to delete this product? This action cannot be undone!')) {
-                window.location.href = '/delete_product/{{ product[0] }}';
+                window.location.href = '/delete_product/{{ details.product[0] }}';
             }
         }
         
@@ -519,10 +519,6 @@ let currentColorId = null;
 		function saveStockUpdate() {
 			const form = document.getElementById('updateStockForm');
 			form.submit();
-		}
-
-		function editProduct() {
-			window.location.href = '/edit_product/{{ details.product[0] }}';
 		}
 
         function uploadImage(variantId, colorName) {
