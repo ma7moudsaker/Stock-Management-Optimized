@@ -138,7 +138,11 @@ class DropboxOAuthBackup:
             important_tables = [
                 'brands', 'colors', 'product_types', 'trader_categories',
                 'suppliers', 'tags', 'base_products', 'product_variants',
-                'color_images', 'product_tags'
+                'color_images', 'product_tags',
+                # Users & Permissions tables
+                'users', 'pages', 'user_permissions',
+                # Logs table
+                'stock_logs'
             ]
             
             total_records = 0
@@ -283,9 +287,16 @@ class DropboxOAuthBackup:
             
             # استرجاع كل جدول
             tables_order = [
+                # System tables first
                 'brands', 'colors', 'product_types', 'trader_categories',
-                'suppliers', 'tags', 'base_products', 'product_variants',
-                'color_images', 'product_tags'
+                'suppliers', 'tags',
+                # Products tables
+                'base_products', 'product_variants',
+                'color_images', 'product_tags',
+                # Users & Permissions
+                'pages', 'users', 'user_permissions',
+                # Logs
+                'stock_logs'
             ]
             
             total_restored = 0
