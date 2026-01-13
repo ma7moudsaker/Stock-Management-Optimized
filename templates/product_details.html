@@ -213,75 +213,75 @@
                             </div>
                         </div>
                         
-					<!-- Stock by Color with Images -->
-					<div class="card mt-4">
-						<div class="card-header">
-							<h5>🎨 Stock by Color with Images</h5>
-						</div>
-						<div class="card-body">
-							{% if details.color_stocks %}
-							<div class="row">
-								{% set processed_colors = [] %}
-								{% for color in details.color_stocks %}
-									{% if color[1] not in processed_colors %}
-										{% if processed_colors.append(color[1]) %}{% endif %}
-										<div class="col-md-4 mb-4">
-											<div class="card color-card h-100">
-												<div class="card-body text-center">
-													<!-- Color Image -->
-													<div class="mb-3">
-														{% if color[5] %}
-															<img src="{{ color[5] }}" 
-																 alt="{{ color[2] }}" 
-																 class="color-image-large"
-																 onclick="openImageInNewTab('{{ color[5] }}')"
-																 title="Click to view full size">
-														{% else %}
-															<div class="no-image-large" title="No image available">
-																📷
-															</div>
-														{% endif %}
-													</div>
-													
-													<!-- Color Info -->
-													<div style="width: 40px; height: 40px; background-color: {{ color[3] }}; 
-															   border: 3px solid #ccc; border-radius: 50%; margin: 0 auto 15px;"></div>
-													<h6 class="fw-bold">{{ color[2] }}</h6>
-													
-													<!-- Stock Badge -->
-													{% if color[4]|int > 0 %}
-														<span class="badge bg-success fs-6 mb-3">{{ color[4] }} pieces</span>
-													{% else %}
-														<span class="badge bg-danger fs-6 mb-3">Out of Stock</span>
-													{% endif %}
-													
-													<!-- Actions -->
-													<div class="d-grid gap-2">
-														<button class="btn btn-outline-primary btn-sm" onclick="updateStock({{ color[0] }}, '{{ color[2] }}', {{ color[4] }})">
-															📦 Update Stock
-														</button>
-														{% if not color[5] %}
-														<button class="btn btn-outline-success btn-sm" onclick="uploadImage({{ color[0] }}, '{{ color[2] }}')">
-															📷 Add Image
-														</button>
-														{% else %}
-														<button class="btn btn-outline-warning btn-sm" onclick="replaceImage({{ color[0] }}, '{{ color[2] }}')">
-															🔄 Replace Image
-														</button>
-														{% endif %}
-													</div>
-												</div>
-											</div>
-										</div>
-									{% endif %}
-								{% endfor %}
-							</div>
-							{% else %}
-							<p class="text-center text-muted">No colors available for this product.</p>
-							{% endif %}
-						</div>
-					</div>
-
+                        <!-- Stock by Color with Images -->
+                        <div class="card mt-4">
+                            <div class="card-header">
+                                <h5>🎨 Stock by Color with Images</h5>
+                            </div>
+                            <div class="card-body">
+                                {% if details.color_stocks %}
+                                <div class="row">
+                                    {% set processed_colors = [] %}
+                                    {% for color in details.color_stocks %}
+                                        {% if color[1] not in processed_colors %}
+                                            {% if processed_colors.append(color[1]) %}{% endif %}
+                                            <div class="col-md-4 mb-4">
+                                                <div class="card color-card h-100">
+                                                    <div class="card-body text-center">
+                                                        <!-- Color Image -->
+                                                        <div class="mb-3">
+                                                            {% if color[5] %}
+                                                                <img src="{{ color[5] }}" 
+                                                                    alt="{{ color[2] }}" 
+                                                                    class="color-image-large"
+                                                                    onclick="openImageInNewTab('{{ color[5] }}')"
+                                                                    title="Click to view full size">
+                                                            {% else %}
+                                                                <div class="no-image-large" title="No image available">
+                                                                    📷
+                                                                </div>
+                                                            {% endif %}
+                                                        </div>
+                                                        
+                                                        <!-- Color Info -->
+                                                        <div style="width: 40px; height: 40px; background-color: {{ color[3] }}; 
+                                                                border: 3px solid #ccc; border-radius: 50%; margin: 0 auto 15px;"></div>
+                                                        <h6 class="fw-bold">{{ color[2] }}</h6>
+                                                        
+                                                        <!-- Stock Badge -->
+                                                        {% if color[4]|int > 0 %}
+                                                            <span class="badge bg-success fs-6 mb-3">{{ color[4] }} pieces</span>
+                                                        {% else %}
+                                                            <span class="badge bg-danger fs-6 mb-3">Out of Stock</span>
+                                                        {% endif %}
+                                                        
+                                                        <!-- Actions -->
+                                                        <div class="d-grid gap-2">
+                                                            <button class="btn btn-outline-primary btn-sm" onclick="updateStock({{ color[0] }}, '{{ color[2] }}', {{ color[4] }})">
+                                                                📦 Update Stock
+                                                            </button>
+                                                            {% if not color[5] %}
+                                                            <button class="btn btn-outline-success btn-sm" onclick="uploadImage({{ color[0] }}, '{{ color[2] }}')">
+                                                                📷 Add Image
+                                                            </button>
+                                                            {% else %}
+                                                            <button class="btn btn-outline-warning btn-sm" onclick="replaceImage({{ color[0] }}, '{{ color[2] }}')">
+                                                                🔄 Replace Image
+                                                            </button>
+                                                            {% endif %}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        {% endif %}
+                                    {% endfor %}
+                                </div>
+                                {% else %}
+                                <p class="text-center text-muted">No colors available for this product.</p>
+                                {% endif %}
+                            </div>
+                        </div>
+                </div>
                     <!-- Actions Panel -->
                     <div class="col-md-4">
                         <div class="card">
@@ -379,7 +379,7 @@
                             </div>
                         </div>
                     </div>
-                </div>
+
             </div>
         </div>
     </div>
