@@ -1,21 +1,33 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, session
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 from datetime import datetime
 import json
 from database import StockDatabase
-import pandas as pd
 from io import BytesIO
+# ✅ openpyxl imports
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font
+from openpyxl.utils.exceptions import InvalidFileException
+import atexit
+import threading
+import time
 from dropbox_oauth_backup import DropboxOAuthBackup
+# أضف هذا مع الـ imports في الأعلى
+from barcode_utils import (
+    BarcodeGenerator, 
+    BarcodePrinter,
+    generate_barcode_for_variant,
+    create_barcode_labels_pdf,
+    validate_ean13
+)
+
 app = Flask(__name__)
 
 # إعدادات الأمان والإنتاج
 app.secret_key = os.environ.get('SECRET_KEY', 'fallback-secret-for-dev')
-
-from functools import wraps
-from flask import session
 
 # Session timeout (30 يوم)
 app.config['PERMANENT_SESSION_LIFETIME'] = 2592000  # 30 days in seconds
@@ -84,22 +96,46 @@ def action_permission_required(page_key):
 
 
 @app.context_processor
-def inject_permissions():
-    """Make has_permission function available in all templates"""
-    def has_permission(page_key):
-        if not session.get('logged_in'):
-            return False
-        
-        user_id = session.get('user_id')
-        
-        # Super Admin has all permissions
-        if user_id == 0:
-            return True
-        
-        # Check user's specific permissions
-        return db.user_has_permission(user_id, page_key)
+def inject_user_data():
+    """Inject user permissions and info into all templates"""
+    user_id = session.get('user_id', 0)
     
-    return dict(has_permission=has_permission)
+    if user_id:
+        # Temporary: Give all permissions for testing
+        user_permissions = {
+            'dashboard': True,
+            'products_new': True,
+            'add_product_new': True,
+            'add_products_multi': True,
+            'barcode_system': True,
+            'inventory_management': True,
+            'bulk_upload_excel': True,
+            'export_products': True,
+            'manage_brands': True,
+            'manage_colors': True,
+            'manage_product_types': True,
+            'manage_tags': True,
+            'manage_trader_categories': True,
+            'user_management': True,
+            'logs': True,
+            'backup_system': True
+        }
+        
+        return {
+            'user_permissions': user_permissions,
+            'user_id': user_id,
+            'username': session.get('username', ''),
+            'full_name': session.get('full_name', ''),
+            'is_super_admin': True
+        }
+    
+    return {
+        'user_permissions': {},
+        'user_id': 0,
+        'username': '',
+        'full_name': '',
+        'is_super_admin': False
+    }
 
 @app.route('/user_management')
 @page_permission_required('user_management')
@@ -237,9 +273,6 @@ if not os.getenv('DATABASE_URL'):
     db.add_default_data()
     print("✅ Default data added!")
 
-import atexit
-import threading
-import time
 
 # إنشاء نظام النسخ الاحتياطية
 backup_system = DropboxOAuthBackup()
@@ -364,7 +397,6 @@ print("✅ تم بدء نظام النسخ الاحتياطية التلقائي
 def backup_on_exit():
     print("🔄 إنشاء نسخة احتياطية قبل الإغلاق...")
     # إضافة تأخير للتأكد من اكتمال العمليات
-    import time
     time.sleep(3)
     backup_system.create_backup()
 
@@ -1196,7 +1228,7 @@ def update_inventory():
                     image_url=update['image_url'],
                     old_value=update['old_stock'],
                     new_value=update['new_stock'],
-                    user_name='Admin',
+                    username='Admin',
                     notes='Bulk inventory update',
                     source_page='Inventory Management',
                     source_url=request.url
@@ -1279,106 +1311,132 @@ def inventory_search():
 @app.route('/bulk_upload_excel', methods=['GET', 'POST'])
 @page_permission_required('bulk_upload')
 def bulk_upload_excel():
-    """رفع منتجات من Excel مع تحسين الأداء ومعالجة Timeout"""
+    """Excel Bulk Upload"""
     if request.method == 'POST':
         try:
-            # التحقق من وجود الملف
+            # Check if file exists
             if 'excel_file' not in request.files:
                 flash('لم يتم اختيار ملف!', 'error')
                 return redirect(url_for('bulk_upload_excel'))
             
             file = request.files['excel_file']
-            if not file or file.filename == '':
+            
+            if not file or not file.filename:
                 flash('يرجى اختيار ملف Excel!', 'error')
                 return redirect(url_for('bulk_upload_excel'))
             
-            # التحقق من نوع الملف
+            # Check file extension
             if not file.filename.lower().endswith(('.xlsx', '.xls')):
-                flash('يرجى رفع ملف Excel صحيح (.xlsx أو .xls)!', 'error')
+                flash('يرجى رفع ملف Excel بصيغة .xlsx أو .xls!', 'error')
                 return redirect(url_for('bulk_upload_excel'))
-
-            print(f"🔄 بدء معالجة الملف: {file.filename}")
             
-            # قراءة الملف مع تحديد نوع البيانات كـ string لتجنب مشاكل float
-            df = pd.read_excel(file, dtype=str)
-            print(f"📊 تم قراءة {len(df)} صف من الملف")
+            print(f"📁 Processing file: {file.filename}")
             
-            # التحقق من وجود الأعمدة المطلوبة
-            required_columns = ['Product Code', 'Brand Name', 'Product Type', 'Category',
-                              'Wholesale Price', 'Retail Price', 'Color Name', 'Stock']
-            missing_columns = [col for col in required_columns if col not in df.columns]
+            # ✅ Read Excel with openpyxl (instead of pandas)
+            
+            wb = load_workbook(file, data_only=True)
+            sheet = wb.active
+            
+            # Get headers from first row
+            headers = [cell.value for cell in sheet[1] if cell.value]
+            
+            print(f"📊 Found {len(headers)} columns")
+            
+            # Check required columns
+            required_columns = [
+                'Product Code', 'Brand Name', 'Product Type', 'Category',
+                'Wholesale Price', 'Retail Price', 'Color Name', 'Stock'
+            ]
+            
+            missing_columns = [col for col in required_columns if col not in headers]
+            
             if missing_columns:
-                flash(f'أعمدة مفقودة في الملف: {", ".join(missing_columns)}', 'error')
+                flash(f'الأعمدة المطلوبة مفقودة: {", ".join(missing_columns)}', 'error')
                 return redirect(url_for('bulk_upload_excel'))
-
-            # تحديد حد أقصى للصفوف لتجنب timeout
+            
+            # Convert rows to list of dictionaries
+            excel_data = []
+            row_count = 0
+            
+            for row in sheet.iter_rows(min_row=2, values_only=True):
+                # Skip empty rows
+                if not any(row):
+                    continue
+                
+                row_dict = {}
+                for idx, header in enumerate(headers):
+                    if idx < len(row):
+                        value = row[idx]
+                        # Convert to string and handle None
+                        row_dict[header] = str(value).strip() if value is not None else ''
+                    else:
+                        row_dict[header] = ''
+                
+                excel_data.append(row_dict)
+                row_count += 1
+            
+            print(f"📝 Loaded {row_count} rows")
+            
+            # Limit rows to prevent timeout
             MAX_ROWS = 2000
-            if len(df) > MAX_ROWS:
-                flash(f'الملف كبير جداً! الحد الأقصى {MAX_ROWS} صف. ملفك يحتوي على {len(df)} صف.', 'warning')
-                df = df.head(MAX_ROWS)
-                flash(f'سيتم معالجة أول {MAX_ROWS} صف فقط.', 'info')
-
-            # تحويل البيانات لقاموس
-            excel_data = df.to_dict('records')
-            print(f"📦 بدء معالجة {len(excel_data)} منتج...")
-
-            # معالجة البيانات
+            if len(excel_data) > MAX_ROWS:
+                flash(f'⚠️ تحذير! الملف يحتوي على {len(excel_data)} صف. سيتم تحميل أول {MAX_ROWS} صف فقط.', 'warning')
+                excel_data = excel_data[:MAX_ROWS]
+                flash(f'تم تقليل البيانات إلى {MAX_ROWS} صف.', 'info')
+            
+            # Process the data
             result = db.bulk_add_products_from_excel_enhanced(excel_data)
-
+            
             if result['success']:
-                # إنشاء نسخة احتياطية فورية بعد النجاح
-                print("🔄 إنشاء نسخة احتياطية فورية بعد Bulk Upload...")
-                import time
-                time.sleep(2)  # تأخير قصير لضمان اكتمال العمليات
+                # Backup after successful upload
+                print("📦 Creating backup after bulk upload...")
+                time.sleep(2)
                 backup_success = backup_system.create_backup()
-                
                 if backup_success:
-                    print("✅ تم إنشاء النسخة الاحتياطية بنجاح")
+                    print("✅ Backup created successfully!")
                 else:
-                    print("⚠️ فشل في إنشاء النسخة الاحتياطية")
+                    print("❌ Backup failed!")
                 
-                # رسائل النجاح
-                success_msg = f'تم معالجة {result["success_count"]} صف بنجاح من أصل {len(excel_data)}!'
+                # Success message
+                success_msg = f"✅ تم رفع {result['success_count']} منتج من أصل {len(excel_data)} بنجاح!"
                 flash(success_msg, 'success')
                 
-                # معلومات البيانات الجديدة
+                # Show created items
                 if result['created_brands']:
-                    flash(f'تم إنشاء براندات جديدة: {", ".join(result["created_brands"])}', 'info')
+                    flash(f"تم إضافة الماركات: {', '.join(result['created_brands'])}", 'info')
+                
                 if result['created_colors']:
-                    flash(f'تم إنشاء ألوان جديدة: {", ".join(result["created_colors"])}', 'info')
+                    flash(f"تم إضافة الألوان: {', '.join(result['created_colors'])}", 'info')
+                
                 if result['created_types']:
-                    flash(f'تم إنشاء أنواع منتجات جديدة: {", ".join(result["created_types"])}', 'info')
-
-                # تحذيرات في حالة فشل بعض الصفوف
+                    flash(f"تم إضافة الأنواع: {', '.join(result['created_types'])}", 'info')
+                
+                # Show errors if any
                 if result['failed_count'] > 0:
-                    flash(f'{result["failed_count"]} صف فشل في المعالجة. راجع التفاصيل أدناه.', 'warning')
-                    
-                    # عرض أول 5 أخطاء فقط لتجنب ازدحام الرسائل
-                    for failed in result['failed_products'][:5]:
-                        flash(f'الصف {failed["row"]}: {failed["error"]}', 'error')
-                    
-                    if len(result['failed_products']) > 5:
-                        flash(f'و {len(result["failed_products"]) - 5} أخطاء أخرى...', 'warning')
-
+                    flash(f'⚠️ فشل رفع {result["failed_count"]} منتج. يرجى مراجعة الأخطاء أدناه.', 'warning')
+                
+                # Show first 5 errors
+                for failed in result['failed_products'][:5]:
+                    flash(f"❌ صف {failed['row']}: {failed['error']}", 'error')
+                
+                if len(result['failed_products']) > 5:
+                    flash(f"⚠️ و {len(result['failed_products']) - 5} أخطاء أخرى...", 'warning')
+                
                 return redirect(url_for('products_new'))
             
             else:
-                error_msg = result.get('error', 'خطأ غير معروف')
-                flash(f'فشل في معالجة الملف: {error_msg}', 'error')
-                print(f"❌ فشل في معالجة الملف: {error_msg}")
-
-        except pd.errors.EmptyDataError:
-            flash('الملف فارغ أو لا يحتوي على بيانات صالحة!', 'error')
-        except pd.errors.ParserError:
-            flash('خطأ في قراءة الملف! تأكد من أنه ملف Excel صحيح.', 'error')
-        except MemoryError:
-            flash('الملف كبير جداً ولا يمكن معالجته. جرب ملف أصغر.', 'error')
+                error_msg = result.get('error', 'حدث خطأ غير متوقع')
+                flash(f'❌ {error_msg}', 'error')
+                print(f"❌ Bulk upload error: {error_msg}")
+        
+        except InvalidFileException:
+            flash('❌ الملف تالف أو ليس ملف Excel صالح!', 'error')
+        
         except Exception as e:
             error_msg = str(e)
-            flash(f'خطأ في معالجة الملف: {error_msg}', 'error')
-            print(f"❌ خطأ عام في bulk upload: {error_msg}")
-
-    # عرض الصفحة
+            flash(f'❌ خطأ: {error_msg}', 'error')
+            print(f"❌ Exception in bulk upload: {error_msg}")
+    
     return render_template('bulk_upload_excel.html')
 
 @app.route('/export_products', methods=['GET', 'POST'])
@@ -1463,10 +1521,40 @@ def export_products():
                 flash('No products match the selected filters!', 'warning')
                 return redirect(url_for('export_products'))
             
-            # إنشاء Excel
-            df = pd.DataFrame(filtered_data)
+            # ✅ إنشاء Excel باستخدام openpyxl
+            
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Products"
+            
+            # ✅ كتابة الـ Headers
+            headers = ['Product Code', 'Brand Name', 'Product Type', 'Category', 'Size', 
+                      'Wholesale Price', 'Retail Price', 'Color Name', 'Stock', 'Image URL', 'Tags']
+            ws.append(headers)
+            
+            # ✅ تنسيق الـ Headers (bold)
+            for cell in ws[1]:
+                cell.font = Font(bold=True)
+            
+            # ✅ كتابة البيانات
+            for row_data in filtered_data:
+                ws.append([
+                    row_data['Product Code'],
+                    row_data['Brand Name'],
+                    row_data['Product Type'],
+                    row_data['Category'],
+                    row_data['Size'],
+                    row_data['Wholesale Price'],
+                    row_data['Retail Price'],
+                    row_data['Color Name'],
+                    row_data['Stock'],
+                    row_data['Image URL'],
+                    row_data['Tags']
+                ])
+            
+            # ✅ حفظ في BytesIO
             output = BytesIO()
-            df.to_excel(output, index=False, engine='openpyxl')
+            wb.save(output)
             output.seek(0)
             
             # تحديد اسم الملف حسب الفلاتر
@@ -1508,31 +1596,36 @@ def export_products():
 def download_excel_template():
     """تحميل نموذج Excel المحسن - نسخة مبسطة بدون تنسيق"""
     try:
-        template_data = {
-            'Product Code': ['96115', '96115', '96115', '87432', '87432', '75321'],
-            'Brand Name': ['Tommy Hilfiger', 'Tommy Hilfiger', 'Tommy Hilfiger', 'Gucci', 'Gucci', 'Zara'],
-            'Product Type': ['Handbag', 'Handbag', 'Handbag', 'Wallet', 'Wallet', 'Backpack'],
-            'Category': ['L', 'L', 'L', 'F', 'F', 'L'],
-            'Size': ['20×22×5', '20×22×5', '20×22×5', '15×18×3', '15×18×3', '25×30×10'],
-            'Wholesale Price': [1000, 1000, 1000, 1200, 1200, 800],
-            'Retail Price': [1500, 1500, 1500, 1800, 1800, 1200],
-            'Color Name': ['Black', 'Red', 'Brown', 'Gold', 'Silver', 'Navy Blue'],
-            'Stock': [15, 5, 3, 10, 8, 20],
-            'Image URL': [
-                'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=400',
-                'https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=400',
-                'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=400',
-                'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=400',
-                'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=400',
-                'https://images.unsplash.com/photo-1622560480605-d83c853bc5c3?w=400'
-            ],
-            'Tags': ['Sale,Medium', 'Sale,Medium', 'Sale,Medium', 'New Arrival,Small', 'New Arrival,Small', 'Summer,Large']
-        }
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
         
-        df = pd.DataFrame(template_data)
+        # ✅ البيانات التجريبية
+        template_data = [
+            ['Product Code', 'Brand Name', 'Product Type', 'Category', 'Size', 'Wholesale Price', 'Retail Price', 'Color Name', 'Stock', 'Image URL', 'Tags'],
+            ['96115', 'Tommy Hilfiger', 'Handbag', 'L', '20×22×5', 1000, 1500, 'Black', 15, 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=400', 'Sale,Medium'],
+            ['96115', 'Tommy Hilfiger', 'Handbag', 'L', '20×22×5', 1000, 1500, 'Red', 5, 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=400', 'Sale,Medium'],
+            ['96115', 'Tommy Hilfiger', 'Handbag', 'L', '20×22×5', 1000, 1500, 'Brown', 3, 'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=400', 'Sale,Medium'],
+            ['87432', 'Gucci', 'Wallet', 'F', '15×18×3', 1200, 1800, 'Gold', 10, 'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=400', 'New Arrival,Small'],
+            ['87432', 'Gucci', 'Wallet', 'F', '15×18×3', 1200, 1800, 'Silver', 8, 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=400', 'New Arrival,Small'],
+            ['75321', 'Zara', 'Backpack', 'L', '25×30×10', 800, 1200, 'Navy Blue', 20, 'https://images.unsplash.com/photo-1622560480605-d83c853bc5c3?w=400', 'Summer,Large']
+        ]
         
+        # ✅ إنشاء Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Products Template"
+        
+        # ✅ كتابة كل الصفوف (Headers + Data)
+        for row in template_data:
+            ws.append(row)
+        
+        # ✅ تنسيق الـ Headers (أول صف - bold)
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+        
+        # ✅ حفظ في BytesIO
         output = BytesIO()
-        df.to_excel(output, index=False, engine='openpyxl')
+        wb.save(output)
         output.seek(0)
         
         return send_file(
@@ -1669,7 +1762,7 @@ def update_stock(variant_id):
                 image_url=image_url,
                 old_value=old_stock,
                 new_value=new_stock,
-                user_name='Admin',
+                username='Admin',
                 notes=f'Manual update from product details',
                 source_page='Product Details',
                 source_url=request.url
@@ -1734,7 +1827,7 @@ def upload_color_image(variant_id):
                     image_url=image_url,
                     old_value=None,
                     new_value=None,
-                    user_name='Admin',
+                    username='Admin',
                     notes=f'Image {"updated" if old_image_url else "added"}',
                     source_page='Product Details',
                     source_url=request.referrer or ''
@@ -1754,11 +1847,11 @@ def upload_color_image(variant_id):
 @app.route('/logs')
 @page_permission_required('activity_logs')
 def logs():
-    """صفحة Stock Activity Logs"""
+    """Stock Activity Logs"""
     # Get filters
-    operation_filter = request.args.get('operation', 'Bulk Update')  # Default: Stock Update
-    date_from = request.args.get('date_from', '')
-    date_to = request.args.get('date_to', '')
+    operation_filter = request.args.get('operation', '')
+    date_from = request.args.get('datefrom', '')
+    date_to = request.args.get('dateto', '')
     search_term = request.args.get('search', '')
     limit = int(request.args.get('limit', 100))
     
@@ -1774,50 +1867,54 @@ def logs():
     # Get statistics
     stats = db.get_logs_stats()
     
-    # Operation types for filter dropdown
+    # ✅ أضف كل الـ operation types المتاحة
     operation_types = [
         'All',
         'Stock Update',
-        'Bulk Update',
+        'Bulk Update', 
         'Product Added',
         'Product Deleted',
-        'Image Updated'
+        'Image Updated',
+        'Barcode Generated',           # ✅ جديد
+        'Barcode Labels Printed',      # ✅ جديد
+        'Barcode Scan - Add',          # ✅ جديد
+        'Barcode Scan - Remove'        # ✅ جديد
     ]
     
-    return render_template('logs.html',
-                         logs=logs,
-                         stats=stats,
-                         operation_types=operation_types,
-                         operation_filter=operation_filter,
-                         date_from=date_from,
-                         date_to=date_to,
-                         search_term=search_term)
+    return render_template('logs.html', 
+                          logs=logs, 
+                          stats=stats, 
+                          operation_types=operation_types,
+                          operation_filter=operation_filter,
+                          date_from=date_from,
+                          date_to=date_to,
+                          search_term=search_term)
 
 @app.route('/export_logs')
 @action_permission_required('activity_logs')
 def export_logs():
     """Export logs to Excel"""
     try:
+                
         # Get all logs
         logs = db.get_all_logs(limit=10000)  # Get more for export
         
-        # Prepare data for Excel
-        logs_data = {
-            'Date': [],
-            'Time': [],
-            'Product Code': [],
-            'Brand': [],
-            'Type': [],
-            'Color': [],
-            'Old Stock': [],
-            'New Stock': [],
-            'Change': [],
-            'Operation': [],
-            'Source Page': [],
-            'User': [],
-            'Image URL': []  # ← عمود جديد!
-        }
+        # ✅ إنشاء Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Activity Logs"
         
+        # ✅ كتابة الـ Headers
+        headers = ['Date', 'Time', 'Product Code', 'Brand', 'Type', 'Color', 
+                  'Old Stock', 'New Stock', 'Change', 'Operation', 'Source Page', 
+                  'User', 'Image URL']
+        ws.append(headers)
+        
+        # ✅ تنسيق الـ Headers (bold)
+        for cell in ws[1]:
+            cell.font = Font(bold=True)
+        
+        # ✅ كتابة البيانات
         for log in logs:
             # Parse created_date
             created_date = log[16] if log[16] else ''
@@ -1833,24 +1930,26 @@ def export_logs():
                 date_str = 'N/A'
                 time_str = 'N/A'
             
-            logs_data['Date'].append(date_str)
-            logs_data['Time'].append(time_str)
-            logs_data['Product Code'].append(log[4] or 'N/A')
-            logs_data['Brand'].append(log[5] or 'N/A')
-            logs_data['Type'].append(log[6] or 'N/A')
-            logs_data['Color'].append(log[7] or 'N/A')
-            logs_data['Old Stock'].append(log[9] if log[9] is not None else '-')
-            logs_data['New Stock'].append(log[10] if log[10] is not None else '-')
-            logs_data['Change'].append(log[11] if log[11] is not None else '-')
-            logs_data['Operation'].append(log[1] or 'N/A')
-            logs_data['Source Page'].append(log[14] or 'N/A')
-            logs_data['User'].append(log[12] or 'Admin')
-            logs_data['Image URL'].append(log[8] or '')  # ← صورة اللون!
+            # إضافة الصف
+            ws.append([
+                date_str,
+                time_str,
+                log[4] or 'N/A',                           # Product Code
+                log[5] or 'N/A',                           # Brand
+                log[6] or 'N/A',                           # Type
+                log[7] or 'N/A',                           # Color
+                log[9] if log[9] is not None else '-',    # Old Stock
+                log[10] if log[10] is not None else '-',  # New Stock
+                log[11] if log[11] is not None else '-',  # Change
+                log[1] or 'N/A',                           # Operation
+                log[14] or 'N/A',                          # Source Page
+                log[12] or 'Admin',                        # User
+                log[8] or ''                               # Image URL
+            ])
         
-        # Create Excel file
-        df = pd.DataFrame(logs_data)
+        # ✅ حفظ في BytesIO
         output = BytesIO()
-        df.to_excel(output, index=False, engine='openpyxl')
+        wb.save(output)
         output.seek(0)
         
         filename = f'stock_logs_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
@@ -1867,6 +1966,1370 @@ def export_logs():
         return redirect(url_for('logs'))
 
 
+# ====================================================================
+# BARCODE SYSTEM ROUTES
+# ====================================================================
+
+# === Barcode Management Page ===
+
+@app.route('/barcode/management')
+@page_permission_required('barcode_system')
+def barcode_management():
+    """Barcode management page"""
+    
+    # Get filters
+    search = request.args.get('search', '')
+    brand_filter = request.args.get('brand', '')
+    type_filter = request.args.get('type', '')
+    color_filter = request.args.get('color', '')
+    tab = request.args.get('tab', 'without')
+    image_filter = request.args.get('image_filter', 'all')  # للـ With Barcode
+    stock_filter = request.args.get('stock_filter', '')  # ← NEW: للـ Without Barcode
+    page = int(request.args.get('page', 1))
+    per_page = 50
+    offset = (page - 1) * per_page
+    
+    # Get statistics
+    stats = db.get_barcode_stats()
+    
+    # Get image status stats (للـ With Barcode)
+    image_stats = db.count_barcode_image_status()
+    stats.update(image_stats)
+    
+    # Get filter options
+    brands = db.get_brands_for_filter()
+    types = [pt[1] for pt in db.get_all_product_types()]
+    colors = [c[1] for c in db.get_all_colors()]
+    
+    # Get variants based on tab
+    if tab == 'without':
+        # ✅ تطبيق الـ stock filter
+        variants = db.get_variants_without_barcode(
+            search=search,
+            brand_filter=brand_filter,
+            type_filter=type_filter,
+            color_filter=color_filter,
+            limit=per_page,
+            offset=offset,
+            in_stock_only=(stock_filter == 'in_stock')  # ← NEW
+        )
+        total_count = db.count_variants_without_barcode(
+            search=search,
+            brand_filter=brand_filter,
+            type_filter=type_filter,
+            color_filter=color_filter,
+            in_stock_only=(stock_filter == 'in_stock')  # ← NEW
+        )
+    else:
+        variants = db.get_barcodes_with_image_status(
+            search=search,
+            brand_filter=brand_filter,
+            type_filter=type_filter,
+            color_filter=color_filter,
+            image_filter=image_filter,
+            limit=per_page,
+            offset=offset
+        )
+        total_count = len(variants)
+    
+    total_pages = (total_count + per_page - 1) // per_page
+    has_more = page < total_pages
+    
+    return render_template('barcode_management.html',
+        stats=stats,
+        variants=variants,
+        brands=brands,
+        types=types,
+        colors=colors,
+        tab=tab,
+        image_filter=image_filter,
+        search=search,
+        brand_filter=brand_filter,
+        type_filter=type_filter,
+        color_filter=color_filter,
+        page=page,
+        total_pages=total_pages,
+        total_count=total_count,
+        has_more=has_more
+    )
+
+
+@app.route('/barcode/generate/<int:variant_id>', methods=['POST'])
+@action_permission_required('barcode_system')
+def generate_barcode_single(variant_id):
+    """Generate barcode for a single variant"""
+    try:
+        # Check if barcode already exists
+        existing = db.get_barcode_by_variant(variant_id)
+        if existing:
+            return jsonify({
+                'success': False,
+                'error': 'Barcode already exists for this variant'
+            }), 400
+        
+        # Get variant details
+        variant = db.get_variant_details_for_barcode(variant_id)
+        if not variant:
+            return jsonify({
+                'success': False,
+                'error': 'Variant not found'
+            }), 404
+        
+        product_code = variant[1]
+        color_name = variant[4]
+        
+        # Generate barcode
+        result = generate_barcode_for_variant(product_code, color_name, variant_id)
+        
+        if not result:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to generate barcode'
+            }), 500
+        
+        # Save to database
+        user_id = session.get('user_id', 0)
+        barcode_id = db.create_barcode(
+            variant_id=variant_id,
+            barcode_number=result['barcode'],
+            image_path=result['image_path'],
+            user_id=user_id
+        )
+        
+        if not barcode_id:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to save barcode to database'
+            }), 500
+        
+        # Log the operation
+        db.add_stock_log(
+            operation_type='Barcode Generated',
+            product_id=None,
+            variant_id=variant_id,
+            product_code=product_code,
+            brand_name=variant[2],
+            product_type=variant[3],
+            color_name=color_name,
+            image_url=variant[7] or '',
+            old_value=None,
+            new_value=None,
+            username=session.get('full_name', 'User'),
+            notes=f'Barcode {result["barcode"]} generated',
+            source_page='Barcode Management',
+            source_url=request.url
+        )
+        
+        return jsonify({
+            'success': True,
+            'barcode': result['barcode'],
+            'image_path': result['image_path'],
+            'message': f'Barcode generated successfully for {product_code} - {color_name}'
+        })
+        
+    except Exception as e:
+        print(f"❌ Error generating barcode: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/barcode/generate_all', methods=['POST'])
+@action_permission_required('barcode_system')
+def generate_all_barcodes():
+    """Generate barcodes for all variants without barcodes"""
+    try:
+        # Get filters from request
+        data = request.get_json() or {}
+        search = data.get('search', '')
+        brand_filter = data.get('brand', '')
+        type_filter = data.get('type', '')
+        color_filter = data.get('color', '')
+        
+        # Get all variants without barcodes (no limit)
+        variants = db.get_variants_without_barcode(
+            search=search,
+            brand_filter=brand_filter,
+            type_filter=type_filter,
+            color_filter=color_filter,
+            limit=10000,  # Large limit
+            offset=0
+        )
+        
+        if not variants:
+            return jsonify({
+                'success': False,
+                'error': 'No variants found to generate barcodes'
+            }), 400
+        
+        success_count = 0
+        failed_count = 0
+        failed_variants = []
+        user_id = session.get('user_id', 0)
+        
+        for variant in variants:
+            variant_id = variant[0]
+            product_code = variant[1]
+            color_name = variant[4]
+            
+            try:
+                # Generate barcode
+                result = generate_barcode_for_variant(product_code, color_name, variant_id)
+                
+                if result:
+                    # Save to database
+                    barcode_id = db.create_barcode(
+                        variant_id=variant_id,
+                        barcode_number=result['barcode'],
+                        image_path=result['image_path'],
+                        user_id=user_id
+                    )
+                    
+                    if barcode_id:
+                        success_count += 1
+                        
+                        # Log the operation
+                        db.add_stock_log(
+                            operation_type='Barcode Generated',
+                            product_id=None,
+                            variant_id=variant_id,
+                            product_code=product_code,
+                            brand_name=variant[2],
+                            product_type=variant[3],
+                            color_name=color_name,
+                            image_url=variant[7] or '',
+                            old_value=None,
+                            new_value=None,
+                            username=session.get('full_name', 'User'),
+                            notes=f'Bulk generation: {result["barcode"]}',
+                            source_page='Barcode Management',
+                            source_url=request.url
+                        )
+                    else:
+                        failed_count += 1
+                        failed_variants.append(f"{product_code}-{color_name}")
+                else:
+                    failed_count += 1
+                    failed_variants.append(f"{product_code}-{color_name}")
+                    
+            except Exception as e:
+                print(f"❌ Error generating barcode for {product_code}-{color_name}: {e}")
+                failed_count += 1
+                failed_variants.append(f"{product_code}-{color_name}")
+        
+        return jsonify({
+            'success': True,
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'failed_variants': failed_variants[:10],  # Return first 10 failures
+            'total': len(variants),
+            'message': f'Generated {success_count} barcodes successfully'
+        })
+        
+    except Exception as e:
+        print(f"❌ Error in bulk generation: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/barcode/generate_selected', methods=['POST'])
+@action_permission_required('barcode_system')
+def generate_selected_barcodes():
+    """Generate barcodes for selected variants"""
+    try:
+        data = request.get_json()
+        variant_ids = data.get('variant_ids', [])
+        
+        if not variant_ids:
+            return jsonify({
+                'success': False,
+                'error': 'No variants selected'
+            }), 400
+        
+        from barcode_utils import generate_barcode_for_variant
+        
+        success_count = 0
+        failed_count = 0
+        failed_items = []
+        user_id = session.get('user_id', 0)
+        
+        for variant_id in variant_ids:
+            try:
+                # Check if barcode already exists
+                existing = db.get_barcode_by_variant(variant_id)
+                if existing:
+                    failed_count += 1
+                    failed_items.append(f"Variant {variant_id}: Barcode already exists")
+                    continue
+                
+                # Get variant details
+                variant = db.get_variant_details_for_barcode(variant_id)
+                
+                if not variant:
+                    failed_count += 1
+                    failed_items.append(f"Variant {variant_id} not found")
+                    continue
+                
+                product_code = variant[1]
+                color_name = variant[4]
+                
+                # Generate barcode image
+                result = generate_barcode_for_variant(product_code, color_name, variant_id)
+                
+                if not result:
+                    failed_count += 1
+                    failed_items.append(f"{product_code} - {color_name}: Failed to generate")
+                    continue
+                
+                # ✅ حفظ في database
+                barcode_id = db.create_barcode(
+                    variant_id=variant_id,
+                    barcode_number=result['barcode'],
+                    image_path=result['image_path'],
+                    user_id=user_id
+                )
+                
+                if barcode_id:
+                    success_count += 1
+                    
+                    # Log the operation
+                    db.add_stock_log(
+                        operation_type="Barcode Generated (Selected)",
+                        product_id=None,
+                        variant_id=variant_id,
+                        product_code=product_code,
+                        brand_name=variant[2],
+                        product_type=variant[3],
+                        color_name=color_name,
+                        image_url=variant[7] or '',
+                        old_value=None,
+                        new_value=result['barcode'],
+                        username=session.get('fullname', 'User'),
+                        notes=f"Selected generation",
+                        source_page="Barcode Management",
+                        source_url=request.url
+                    )
+                else:
+                    failed_count += 1
+                    failed_items.append(f"{product_code} - {color_name}: Failed to save")
+                    
+            except Exception as e:
+                failed_count += 1
+                failed_items.append(f"Variant {variant_id}: {str(e)}")
+                print(f"❌ Error generating barcode for variant {variant_id}: {e}")
+        
+        return jsonify({
+            'success': True,
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'failed_items': failed_items[:10],
+            'message': f'Generated {success_count} barcodes ({failed_count} failed)'
+        })
+        
+    except Exception as e:
+        print(f"❌ Error in selected generation: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+
+@app.route('/barcode/view/<int:variant_id>')
+@action_permission_required('barcode_system')
+def view_barcode(variant_id):
+    """Get barcode details for a variant (API endpoint)"""
+    try:
+        # Get variant details
+        variant = db.get_variant_details_for_barcode(variant_id)
+        
+        if not variant:
+            return jsonify({
+                'success': False,
+                'error': 'Variant not found'
+            }), 404
+        
+        # Get barcode details
+        barcode = db.get_barcode_by_variant(variant_id)
+        
+        if not barcode:
+            return jsonify({
+                'success': False,
+                'error': 'Barcode not found for this variant'
+            }), 404
+        
+        # Prepare barcode image URL
+        barcode_image_url = None
+        if barcode[3]:  # image_path
+            # Convert file path to URL
+            if barcode[3].startswith('static/'):
+                barcode_image_url = '/' + barcode[3]
+            else:
+                barcode_image_url = barcode[3]
+        
+        return jsonify({
+            'success': True,
+            'product_code': variant[1],
+            'brand_name': variant[2],
+            'product_type': variant[3],
+            'color_name': variant[4],
+            'current_stock': variant[6],
+            'image_url': variant[7],
+            'wholesale_price': variant[9] if len(variant) > 9 else 0,
+            'retail_price': variant[10] if len(variant) > 10 else 0,
+            'barcode': barcode[2],
+            'barcode_image_url': barcode_image_url,
+            'generated_at': str(barcode[4]) if barcode[4] else None
+        })
+        
+    except Exception as e:
+        print(f"❌ Error viewing barcode: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# === Barcode Scanner Page ===
+
+@app.route('/barcode/scanner')
+@page_permission_required('barcode_system')
+def barcode_scanner():
+    """Barcode scanner page"""
+    user_id = session.get('user_id', 0)
+    
+    # Get active session
+    active_session_db = db.get_active_session(user_id)
+    
+    if active_session_db:
+        session_id = active_session_db[0]
+        
+        # ✅ جيب الـ items مع كل التفاصيل!
+        items_with_details = db.get_session_items_with_details(session_id)
+        
+        # ✅ حوّل الـ image URLs
+        for item in items_with_details:
+            image_url = item.get('image_url')
+            if image_url:
+                if image_url.startswith('http://') or image_url.startswith('https://'):
+                    item['image_url'] = image_url  # خليها زي ما هي
+                else:
+                    item['image_url'] = f"/{image_url}"  # حط / قدام static paths
+        
+        session_data = {
+            'exists': True,
+            'id': int(active_session_db[0]),
+            'mode': str(active_session_db[2]),
+            'items': items_with_details,  # ✅ بعت الـ items الكاملة
+            'itemsjson': json.dumps(items_with_details),  # ✅ JSON string للـ JavaScript
+            'createdat': str(active_session_db[4]) if len(active_session_db) > 4 else ''
+        }
+    else:
+        session_data = {
+            'exists': False,
+            'id': 0,
+            'mode': 'add',
+            'items': [],
+            'itemsjson': '[]',
+            'createdat': ''
+        }
+    
+    return render_template('barcode_scanner.html', active_session=session_data)
+
+@app.route('/barcode/session/start', methods=['POST'])
+@action_permission_required('barcode_system')
+def start_scan_session():
+    """Start a new scanning session"""
+    try:
+        data = request.get_json()
+        mode = data.get('mode', 'add')  # 'add' or 'remove'
+        
+        if mode not in ['add', 'remove']:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid mode. Must be "add" or "remove"'
+            }), 400
+        
+        user_id = session.get('user_id', 0)
+        
+        # Check if there's already an active session
+        existing = db.get_active_session(user_id)
+        if existing:
+            return jsonify({
+                'success': False,
+                'error': 'You already have an active session. Please close it first.',
+                'session_id': existing[0]
+            }), 400
+        
+        # Create new session
+        session_id = db.create_scan_session(user_id, mode)
+        
+        if not session_id:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to create session'
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'mode': mode,
+            'message': f'Session started in {mode.upper()} mode'
+        })
+        
+    except Exception as e:
+        print(f"❌ Error starting session: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/barcode/session/scan', methods=['POST'])
+@page_permission_required('barcode_system')
+def barcode_session_scan():
+    """Scan barcode and add to session"""
+    try:
+        data = request.get_json()
+        barcode = str(data.get('barcode', '')).strip()
+        
+        # ✅ حافظ على الأصفار للـ EAN-13
+        if barcode.isdigit() and len(barcode) <= 13:
+            barcode = barcode.zfill(13)  # يضيف أصفار لو ناقصة
+        
+        print(f"📊 Scanning barcode: {barcode}")
+        user_id = session.get('user_id', 0)
+        
+        if not barcode:
+            return jsonify({'success': False, 'error': 'Barcode is required'})
+        
+        # Get active session
+        active_session = db.get_active_session(user_id)
+        if not active_session:
+            return jsonify({'success': False, 'error': 'No active session. Please start a session first.'})
+        
+        session_id = active_session[0]
+        
+        # Get variant by barcode number
+        variant = db.get_variant_by_barcode(barcode)
+        if not variant:
+            return jsonify({'success': False, 'error': f'Product not found with barcode: {barcode}'})
+        
+        # Parse variant data
+        variant_id = variant[0]
+        product_code = variant[1]
+        brand_name = variant[2]
+        product_type = variant[3]
+        color_name = variant[4]
+        color_code = variant[5]
+        stock_quantity = variant[6]
+        image_url = variant[7]
+        product_size = variant[8] if len(variant) > 8 else None
+        
+        # Add item to session
+        result = db.add_item_to_session(session_id, variant_id)
+        
+        if result:
+            # ✅ إصلاح الـ image URL - نتأكد لو بيبدأ بـ http مش نحط /
+            if image_url:
+                if image_url.startswith('http://') or image_url.startswith('https://'):
+                    final_image_url = image_url  # ✅ خليها زي ما هي
+                else:
+                    final_image_url = f"/{image_url}"  # ✅ حط / قدام static paths
+            else:
+                final_image_url = None
+            
+            # Return full item data - استخدم نفس الأسماء اللي في JavaScript!
+            item_data = {
+                'variant_id': variant_id,
+                'productcode': product_code,      # ✅ بدون underscore
+                'brandname': brand_name,          # ✅ بدون underscore
+                'producttype': product_type,      # ✅ بدون underscore
+                'colorname': color_name,          # ✅ بدون underscore
+                'colorcode': color_code,          # ✅ بدون underscore
+                'stockquantity': stock_quantity,  # ✅ بدون underscore
+                'imageurl': final_image_url,      # ✅ بدون underscore
+                'productsize': product_size,      # ✅ بدون underscore
+                'quantity': 1
+            }
+            
+            return jsonify({
+                'success': True,
+                'message': f'✅ Added: {product_code} - {color_name}',
+                'item': item_data
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Failed to add item to session'})
+            
+    except Exception as e:
+        print(f"❌ Error in barcode_session_scan: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'})
+
+
+@app.route('/barcode/session/update', methods=['POST'])
+@action_permission_required('barcode_system')
+def update_session_item():
+    """Update quantity for an item in session OR update all items"""
+    try:
+        data = request.get_json()
+        user_id = session.get('user_id', 0)
+        
+        active_session = db.get_active_session(user_id)
+        if not active_session:
+            return jsonify({'success': False, 'error': 'No active session'}, 400)
+        
+        session_id = active_session[0]
+        items = json.loads(active_session[3]) if active_session[3] else []
+        
+        # ✅ Check if updating all items or single item
+        if 'items' in data:
+            # Update all items at once (from quantity modal)
+            new_items = []
+            for item in data['items']:
+                new_items.append({
+                    'variant_id': item.get('variant_id'),
+                    'quantity': item.get('quantity', 1)
+                })
+            items = new_items
+            
+        elif 'variant_id' in data:
+            # Update single item quantity (original functionality)
+            variant_id = data.get('variant_id')
+            quantity = data.get('quantity', 1)
+            
+            if not variant_id:
+                return jsonify({'success': False, 'error': 'Variant ID is required'}, 400)
+            
+            # Find and update item
+            item = next((item for item in items if item['variant_id'] == variant_id), None)
+            if not item:
+                return jsonify({'success': False, 'error': 'Item not found in session'}, 404)
+            
+            item['quantity'] = max(1, int(quantity))  # Minimum 1
+        else:
+            return jsonify({'success': False, 'error': 'Invalid request'}, 400)
+        
+        # Update session
+        success = db.update_session_items(session_id, json.dumps(items))
+        
+        if not success:
+            return jsonify({'success': False, 'error': 'Failed to update session'}, 500)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Session updated',
+            'session': {
+                'total_items': len(items),
+                'total_quantity': sum(item['quantity'] for item in items)
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Error updating item: {e}")
+        return jsonify({'success': False, 'error': str(e)}, 500)
+
+
+@app.route('/barcode/session/remove', methods=['POST'])
+@action_permission_required('barcode_system')
+def remove_session_item():
+    """Remove an item from session"""
+    try:
+        data = request.get_json()
+        variant_id = data.get('variant_id')
+        
+        if not variant_id:
+            return jsonify({
+                'success': False,
+                'error': 'Variant ID is required'
+            }), 400
+        
+        user_id = session.get('user_id', 0)
+        active_session = db.get_active_session(user_id)
+        
+        if not active_session:
+            return jsonify({
+                'success': False,
+                'error': 'No active session'
+            }), 400
+        
+        session_id = active_session[0]
+        items = json.loads(active_session[3]) if active_session[3] else []
+        
+        # Remove item
+        items = [item for item in items if item['variant_id'] != variant_id]
+        
+        # Update session
+        success = db.update_session_items(session_id, json.dumps(items))
+        
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to update session'
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'message': 'Item removed from session',
+            'session': {
+                'total_items': len(items),
+                'total_quantity': sum(item['quantity'] for item in items)
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Error removing item: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/barcode/session/clear', methods=['POST'])
+@action_permission_required('barcode_system')
+def clear_session():
+    """Clear all items from session"""
+    try:
+        user_id = session.get('user_id', 0)
+        active_session = db.get_active_session(user_id)
+        
+        if not active_session:
+            return jsonify({
+                'success': False,
+                'error': 'No active session'
+            }), 400
+        
+        session_id = active_session[0]
+        
+        # Clear items
+        success = db.update_session_items(session_id, '[]')
+        
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to clear session'
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'message': 'Session cleared'
+        })
+        
+    except Exception as e:
+        print(f"❌ Error clearing session: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/barcode/session/confirm', methods=['POST'])
+@action_permission_required('barcode_system')
+def confirm_session():
+    """Confirm session and update stock"""
+    try:
+        user_id = session.get('user_id', 0)
+        
+        # Get active session
+        active_session = db.get_active_session(user_id)
+        if not active_session:
+            return jsonify({'success': False, 'error': 'No active session'})
+        
+        session_id = active_session[0]
+        session_mode = active_session[2]
+        
+        # Get session items with full details
+        items = db.get_session_items_with_details(session_id)
+        if not items:
+            return jsonify({'success': False, 'error': 'Session is empty'})
+        
+        # Prepare stock updates list
+        stock_updates = []
+        
+        # Get connection
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Step 1: Get all details BEFORE updating
+            for item in items:
+                variant_id = item['variant_id']
+                quantity = item['quantity']
+                
+                try:
+                    # Get current details from database
+                    cursor.execute("""
+                        SELECT pv.current_stock, bp.id, bp.product_code, 
+                               br.brand_name, pt.type_name, c.color_name, ci.image_url
+                        FROM product_variants pv
+                        JOIN base_products bp ON pv.base_product_id = bp.id
+                        JOIN brands br ON bp.brand_id = br.id
+                        JOIN product_types pt ON bp.product_type_id = pt.id
+                        JOIN colors c ON pv.color_id = c.id
+                        LEFT JOIN color_images ci ON pv.id = ci.variant_id
+                        WHERE pv.id = ?
+                    """, (variant_id,))
+                    
+                    result = cursor.fetchone()
+                    
+                    if result:
+                        old_stock = result[0]
+                        
+                        # Calculate new stock
+                        if session_mode == 'add':
+                            new_stock = old_stock + quantity
+                        else:  # remove
+                            new_stock = max(0, old_stock - quantity)
+                        
+                        # Only add to updates if stock actually changed
+                        if old_stock != new_stock:
+                            stock_updates.append({
+                                'variant_id': variant_id,
+                                'product_id': result[1],
+                                'product_code': result[2],
+                                'brand_name': result[3],
+                                'product_type': result[4],
+                                'color_name': result[5],
+                                'image_url': result[6] or '',
+                                'old_stock': old_stock,
+                                'new_stock': new_stock,
+                                'quantity': quantity,
+                                'skip_log': False
+                            })
+                        else:
+                            stock_updates.append({'skip_log': True})
+                    
+                except Exception as e:
+                    print(f"❌ Error getting details for variant {variant_id}: {e}")
+                    stock_updates.append({'skip_log': True})
+            
+            # Step 2: Update stock for all items
+            for update in stock_updates:
+                if not update.get('skip_log', False):
+                    cursor.execute("""
+                        UPDATE product_variants 
+                        SET current_stock = ? 
+                        WHERE id = ?
+                    """, (update['new_stock'], update['variant_id']))
+            
+            # Commit all updates
+            conn.commit()
+            conn.close()
+            
+            # Step 3: Log successful updates (after commit)
+            logged_count = 0
+            for update in stock_updates:
+                if not update.get('skip_log', False) and 'old_stock' in update:
+                    db.add_stock_log(
+                        operation_type=f'Barcode Scan - {session_mode.title()}',
+                        product_id=update['product_id'],
+                        variant_id=update['variant_id'],
+                        product_code=update['product_code'],
+                        brand_name=update['brand_name'],
+                        product_type=update['product_type'],
+                        color_name=update['color_name'],
+                        image_url=update['image_url'],
+                        old_value=update['old_stock'],
+                        new_value=update['new_stock'],
+                        username=session.get('full_name', 'User'),
+                        notes=f"Stock {'increased' if session_mode == 'add' else 'decreased'} by {update['quantity']} units via barcode scanner",
+                        source_page='Barcode Scanner',
+                        source_url=request.url
+                    )
+                    logged_count += 1
+            
+            # Close session
+            db.close_session(session_id, 'confirmed')
+            
+            return jsonify({
+                'success': True, 
+                'updated_count': logged_count,
+                'message': f'Stock updated for {logged_count} items'
+            })
+            
+        except Exception as e:
+            conn.rollback()
+            conn.close()
+            return jsonify({'success': False, 'error': f'Failed to update stock: {str(e)}'})
+    
+    except Exception as e:
+        print(f"❌ Error confirming session: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/barcode/session/cancel', methods=['POST'])
+@action_permission_required('barcode_system')
+def cancel_session():
+    """Cancel active session without updating stock"""
+    try:
+        user_id = session.get('user_id', 0)
+        active_session = db.get_active_session(user_id)
+        
+        if not active_session:
+            return jsonify({
+                'success': False,
+                'error': 'No active session'
+            }), 400
+        
+        session_id = active_session[0]
+        
+        # Close session
+        success = db.close_session(session_id, 'cancelled')
+        
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to cancel session'
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'message': 'Session cancelled'
+        })
+        
+    except Exception as e:
+        print(f"❌ Error cancelling session: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# === Barcode Printing Page ===
+
+@app.route('/barcode/printing')
+@page_permission_required('barcode_system')
+def barcode_printing():
+    """Barcode printing page"""
+    # Get filters
+    search = request.args.get('search', '')
+    brand_filter = request.args.get('brand', '')
+    type_filter = request.args.get('type', '')
+    color_filter = request.args.get('color', '')
+    stock_only = request.args.get('stock_only', '') == 'on'
+    page = int(request.args.get('page', 1))
+    per_page = 50
+    offset = (page - 1) * per_page
+    
+    # Get filter options
+    brands = db.get_brands_for_filter()
+    types = [pt[1] for pt in db.get_all_product_types()]
+    colors = [c[1] for c in db.get_all_colors()]
+    
+    # Get variants with barcodes
+    variants = db.get_variants_with_barcode(
+        search=search,
+        brand_filter=brand_filter,
+        type_filter=type_filter,
+        color_filter=color_filter,
+        limit=per_page,
+        offset=offset
+    )
+    
+    # Filter by stock if needed
+    if stock_only:
+        variants = [v for v in variants if v[6] > 0]  # current_stock > 0
+    
+    total_count = db.count_variants_with_barcode(
+        search=search,
+        brand_filter=brand_filter,
+        type_filter=type_filter,
+        color_filter=color_filter
+    )
+    
+    # Calculate pagination
+    total_pages = (total_count + per_page - 1) // per_page
+    has_more = page < total_pages
+    
+    return render_template('barcode_printing.html',
+                         variants=variants,
+                         brands=brands,
+                         types=types,
+                         colors=colors,
+                         search=search,
+                         brand_filter=brand_filter,
+                         type_filter=type_filter,
+                         color_filter=color_filter,
+                         stock_only=stock_only,
+                         page=page,
+                         total_pages=total_pages,
+                         total_count=total_count,
+                         has_more=has_more)
+
+
+@app.route('/barcode/print', methods=['POST'])
+@action_permission_required('barcode_system')
+def print_barcodes():
+    """Generate PDF with barcode labels"""
+    try:
+        data = request.get_json()
+        variant_ids = data.get('variant_ids', [])
+        quantities = data.get('quantities', {})  # {variant_id: quantity}
+        
+        if not variant_ids:
+            return jsonify({
+                'success': False,
+                'error': 'No variants selected'
+            }), 400
+        
+        # Prepare labels data
+        labels_data = []
+        
+        for variant_id in variant_ids:
+            # Get barcode info
+            barcode = db.get_barcode_by_variant(variant_id)
+            
+            if not barcode:
+                continue
+            
+            # Get variant details
+            variant = db.get_variant_details_for_barcode(variant_id)
+            
+            if not variant:
+                continue
+            
+            # Get quantity
+            quantity = quantities.get(str(variant_id), 1)
+            
+            labels_data.append({
+                'barcode_image': barcode[3],  # image_path
+                'product_code': variant[1],
+                'color_name': variant[4],
+                'barcode_number': barcode[2],  # barcode_number
+                'quantity': int(quantity)
+            })
+        
+        if not labels_data:
+            return jsonify({
+                'success': False,
+                'error': 'No valid barcodes found'
+            }), 400
+        
+        # Generate PDF
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        pdf_filename = f'barcode_labels_{timestamp}.pdf'
+        pdf_path = os.path.join('static', 'temp', pdf_filename)
+        
+        # Create temp directory if it doesn't exist
+        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+        
+        # Create PDF
+        result = create_barcode_labels_pdf(labels_data, pdf_path)
+        
+        if not result:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to generate PDF'
+            }), 500
+        
+        # Log each product separately with full details
+        logged_count = 0
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            for variant_id in variant_ids:
+                quantity = quantities.get(str(variant_id), 1)
+                
+                try:
+                    # Get full product details from database
+                    cursor.execute("""
+                        SELECT bp.id, bp.product_code, br.brand_name, 
+                               pt.type_name, c.color_name, pv.current_stock, ci.image_url
+                        FROM product_variants pv
+                        JOIN base_products bp ON pv.base_product_id = bp.id
+                        JOIN brands br ON bp.brand_id = br.id
+                        JOIN product_types pt ON bp.product_type_id = pt.id
+                        JOIN colors c ON pv.color_id = c.id
+                        LEFT JOIN color_images ci ON pv.id = ci.variant_id
+                        WHERE pv.id = ?
+                    """, (variant_id,))
+                    
+                    result = cursor.fetchone()
+                    
+                    if result:
+                        db.add_stock_log(
+                            operation_type='Barcode Labels Printed',
+                            product_id=result[0],
+                            variant_id=variant_id,
+                            product_code=result[1],
+                            brand_name=result[2],
+                            product_type=result[3],
+                            color_name=result[4],
+                            image_url=result[6] or '',
+                            old_value=result[5],
+                            new_value=result[5],
+                            username=session.get('full_name', 'User'),
+                            notes=f'Printed {quantity} barcode label{"s" if quantity > 1 else ""}',
+                            source_page='Barcode Printing',
+                            source_url=request.url
+                        )
+                        logged_count += 1
+                
+                except Exception as e:
+                    print(f"❌ Error logging barcode print for variant {variant_id}: {e}")
+                    continue
+            
+            conn.close()
+            print(f"✅ Logged {logged_count} barcode print operations")
+            
+        except Exception as e:
+            print(f"❌ Error in barcode print logging: {e}")
+            if conn:
+                conn.close()
+        
+        # Calculate total labels (بعد الـ Logging)
+        total_labels = sum(item['quantity'] for item in labels_data)
+        
+        return jsonify({
+            'success': True,
+            'pdf_url': f'/static/temp/{pdf_filename}',
+            'total_labels': total_labels,
+            'total_products': len(labels_data),
+            'message': f'PDF generated with {total_labels} labels'
+        })
+
+        
+    except Exception as e:
+        print(f"❌ Error printing barcodes: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# === Barcode Lookup API ===
+
+@app.route('/barcode/lookup')
+@login_required
+def barcode_lookup_page():
+    """Barcode Lookup Page - Quick scan without stock changes"""
+    return render_template('barcode_lookup.html')
+
+# الـ API موجود أصلاً - بس نتأكد إنه شغال
+@app.route('/api/barcode/lookup/<barcode>')
+@login_required
+def barcode_lookup(barcode):
+    """Quick barcode lookup API"""
+    try:
+        # ✅ حافظ على الأصفار
+        barcode = str(barcode).strip()
+        if barcode.isdigit() and len(barcode) <= 13:
+            barcode = barcode.zfill(13)
+        
+        print(f"🔍 Looking up barcode: {barcode}")
+        
+        barcode_data = db.get_barcode_by_number(barcode)
+
+        
+        if not barcode_data:
+            return jsonify({'success': False, 'error': 'Barcode not found'})
+        
+        # Fix image URL
+        image_url = barcode_data[10] or None
+        if image_url:
+            if image_url.startswith('http://') or image_url.startswith('https://'):
+                final_image_url = image_url
+            else:
+                final_image_url = f"/{image_url}"
+        else:
+            final_image_url = None
+        
+        return jsonify({
+            'success': True,
+            'variant_id': barcode_data[1],
+            'barcode': barcode_data[2],
+            'product_code': barcode_data[5],
+            'brand_name': barcode_data[6],
+            'product_type': barcode_data[7],
+            'color_name': barcode_data[8],
+            'color_code': barcode_data[9],
+            'current_stock': barcode_data[4],
+            'wholesale_price': barcode_data[11],
+            'retail_price': barcode_data[12],
+            'product_size': barcode_data[13],
+            'image_url': final_image_url
+        })
+        
+    except Exception as e:
+        print(f"❌ Error looking up barcode: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+
+# === Cleanup Task (Optional - run periodically) ===
+
+@app.route('/admin/cleanup_sessions')
+@page_permission_required('barcode_system')
+def cleanup_sessions():
+    """Manual cleanup of old sessions (can be automated)"""
+    try:
+        count = db.cleanup_old_sessions(hours=24)
+        flash(f'Cleaned up {count} old sessions', 'success')
+    except Exception as e:
+        flash(f'Error cleaning up sessions: {str(e)}', 'error')
+    
+    return redirect(url_for('barcode_scanner'))
+
+
+# ========================================
+# BARCODE IMAGE REGENERATION
+# ========================================
+
+@app.route('/barcode/regenerate/<int:variant_id>', methods=['POST'])
+@action_permission_required('barcode_system')
+def regenerate_single_barcode_image(variant_id):
+    """Regenerate barcode image for a single variant"""
+    try:
+        # Get variant details
+        variant = db.get_variant_details_for_barcode(variant_id)
+        
+        if not variant:
+            return jsonify({
+                'success': False,
+                'error': 'Variant not found'
+            }), 404
+        
+        product_code = variant[1]
+        color_name = variant[4]
+        
+        # Import barcode utils
+        from barcode_utils import generate_barcode_for_variant
+        
+        # Generate barcode image
+        result = generate_barcode_for_variant(product_code, color_name, variant_id)
+        
+        if not result:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to generate barcode image'
+            }), 500
+        
+        # Update database
+        db.update_barcode_image_path(variant_id, result['image_path'])
+        
+        # Log the operation
+        db.add_stock_log(
+            operation_type="Barcode Image Regenerated",
+            product_id=None,
+            variant_id=variant_id,
+            product_code=product_code,
+            brand_name=variant[2],
+            product_type=variant[3],
+            color_name=color_name,
+            image_url=variant[7] or '',
+            old_value=None,
+            new_value=None,
+            username=session.get('fullname', 'User'),
+            notes=f"Barcode image regenerated manually",
+            source_page="Barcode Management",
+            source_url=request.url
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': f'✅ Barcode image regenerated for {product_code} - {color_name}',
+            'image_path': result['image_path']
+        })
+        
+    except Exception as e:
+        print(f"❌ Error regenerating barcode image: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/barcode/regenerate_bulk', methods=['POST'])
+@action_permission_required('barcode_system')
+def regenerate_bulk_barcode_images():
+    """Regenerate barcode images for multiple variants"""
+    try:
+        data = request.get_json()
+        variant_ids = data.get('variant_ids', [])
+        
+        if not variant_ids:
+            return jsonify({
+                'success': False,
+                'error': 'No variants selected'
+            }), 400
+        
+        from barcode_utils import generate_barcode_for_variant
+        
+        success_count = 0
+        failed_count = 0
+        failed_items = []
+        
+        for variant_id in variant_ids:
+            try:
+                # Get variant details
+                variant = db.get_variant_details_for_barcode(variant_id)
+                
+                if not variant:
+                    failed_count += 1
+                    failed_items.append(f"Variant {variant_id} not found")
+                    continue
+                
+                product_code = variant[1]
+                color_name = variant[4]
+                
+                # Generate barcode image
+                result = generate_barcode_for_variant(product_code, color_name, variant_id)
+                
+                if result:
+                    # Update database
+                    db.update_barcode_image_path(variant_id, result['image_path'])
+                    success_count += 1
+                    
+                    # Log
+                    db.add_stock_log(
+                        operation_type="Barcode Image Regenerated (Bulk)",
+                        product_id=None,
+                        variant_id=variant_id,
+                        product_code=product_code,
+                        brand_name=variant[2],
+                        product_type=variant[3],
+                        color_name=color_name,
+                        image_url=variant[7] or '',
+                        old_value=None,
+                        new_value=None,
+                        username=session.get('fullname', 'User'),
+                        notes=f"Bulk regeneration",
+                        source_page="Barcode Management",
+                        source_url=request.url
+                    )
+                else:
+                    failed_count += 1
+                    failed_items.append(f"{product_code} - {color_name}")
+                    
+            except Exception as e:
+                failed_count += 1
+                failed_items.append(f"Variant {variant_id}: {str(e)}")
+        
+        return jsonify({
+            'success': True,
+            'success_count': success_count,
+            'failed_count': failed_count,
+            'failed_items': failed_items[:10],  # First 10 failures
+            'message': f'✅ Regenerated {success_count} images ({failed_count} failed)'
+        })
+        
+    except Exception as e:
+        print(f"❌ Error in bulk regeneration: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.errorhandler(404)
 def not_found_error(error):
     return render_template('404.html'), 404
@@ -1879,6 +3342,8 @@ def internal_error(error):
 @app.route('/health')
 def health_check():
     return {'status': 'healthy', 'timestamp': datetime.now().isoformat()}
+
+
 
 
 if __name__ == '__main__':

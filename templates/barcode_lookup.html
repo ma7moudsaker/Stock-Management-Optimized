@@ -1,0 +1,405 @@
+{% extends "base.html" %}
+
+{% block title %}Barcode Lookup - Stock Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-search"></i> Barcode Lookup</h2>
+            <p class="text-muted mb-0">Quick product information lookup by barcode</p>
+        </div>
+    </div>
+
+    <!-- Scanner Input -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-8 mx-auto">
+                    <label class="form-label"><strong>Scan or Enter Barcode</strong></label>
+                    <div class="input-group input-group-lg">
+                        <input type="text" class="form-control" id="barcodeInput" 
+                               placeholder="Scan barcode here..." autofocus>
+                        <button class="btn btn-primary" id="lookupBtn">
+                            <i class="fas fa-search"></i> Lookup
+                        </button>
+                    </div>
+                    <small class="text-muted">Use USB scanner or type barcode manually and press Enter</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Camera Scanner (Optional) -->
+    <div class="card mb-4">
+        <div class="card-body text-center">
+            <button class="btn btn-success btn-lg" id="startCameraBtn">
+                <i class="fas fa-camera"></i> Start Camera Scanner
+            </button>
+            
+            <!-- Camera View -->
+            <div id="cameraView" style="display: none;" class="mt-3">
+                <div id="reader" style="width: 100%; max-width: 600px; margin: 0 auto;"></div>
+                <button class="btn btn-danger mt-3" id="stopCameraBtn">
+                    <i class="fas fa-stop"></i> Stop Camera
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Details Card (Hidden by default) -->
+    <div class="card d-none" id="productCard">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0"><i class="fas fa-check-circle"></i> Product Found</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <!-- Product Image -->
+                <div class="col-md-3 text-center">
+                    <img id="productImage" src="" alt="Product" 
+                         class="img-fluid rounded border" 
+                         style="max-height: 300px; object-fit: cover;">
+                </div>
+                
+                <!-- Product Info -->
+                <div class="col-md-9">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="text-muted small">Product Code</label>
+                            <h4 id="productCode" class="mb-0 text-primary">-</h4>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="text-muted small">Barcode</label>
+                            <h5 id="barcodeNumber" class="mb-0">-</h5>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label class="text-muted small">Brand</label>
+                            <p class="mb-0"><strong id="brandName">-</strong></p>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="text-muted small">Type</label>
+                            <p class="mb-0"><span class="badge bg-info" id="productType">-</span></p>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label class="text-muted small">Size</label>
+                            <p class="mb-0" id="productSize">-</p>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="text-muted small">Color</label>
+                            <p class="mb-0">
+                                <span class="badge" id="colorBadge" 
+                                      style="background-color: #ccc; color: #000; padding: 8px 15px;">
+                                    <span id="colorName">-</span>
+                                </span>
+                            </p>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="text-muted small">Current Stock</label>
+                            <h3 id="currentStock" class="mb-0 text-success">-</h3>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="text-muted small">Wholesale Price</label>
+                            <h5 id="wholesalePrice" class="mb-0">-</h5>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="text-muted small">Retail Price</label>
+                            <h5 id="retailPrice" class="mb-0 text-success">-</h5>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Not Found Card (Hidden by default) -->
+    <div class="card border-danger d-none" id="notFoundCard">
+        <div class="card-body text-center py-5">
+            <i class="fas fa-times-circle text-danger" style="font-size: 4rem;"></i>
+            <h4 class="mt-3">Product Not Found</h4>
+            <p class="text-muted">Barcode <strong id="notFoundBarcode">-</strong> does not exist in the system.</p>
+        </div>
+    </div>
+
+    <!-- Recent Lookups -->
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-history"></i> Recent Lookups</h5>
+        </div>
+        <div class="card-body">
+            <ul id="recentList" class="list-unstyled mb-0">
+                <li class="text-muted"><i>No lookups yet</i></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- HTML5 QR Code Library -->
+<script src="https://unpkg.com/html5-qrcode"></script>
+
+<script>
+let html5QrCode = null;
+
+// Lookup function
+function lookupBarcode(barcode) {
+    // ✅ تأكد إن الباركود String
+    barcode = String(barcode).trim();
+    
+    // ✅ حافظ على الأصفار للـ EAN-13
+    if (/^\d+$/.test(barcode) && barcode.length > 0 && barcode.length <= 13) {
+        barcode = barcode.padStart(13, '0');
+    }
+    
+    console.log('Looking up barcode:', barcode);
+    
+    if (!barcode) {
+        showToast('error', 'Please enter a barcode');
+        return;
+    }
+
+    
+    // Hide previous results
+    document.getElementById('productCard').classList.add('d-none');
+    document.getElementById('notFoundCard').classList.add('d-none');
+    
+    fetch(`/api/barcode/lookup/${barcode}`)
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show product card
+            document.getElementById('productCard').classList.remove('d-none');
+            
+            // Fill data
+            document.getElementById('productCode').textContent = data.product_code || 'N/A';
+            document.getElementById('barcodeNumber').textContent = data.barcode || 'N/A';
+            document.getElementById('brandName').textContent = data.brand_name || 'N/A';
+            document.getElementById('productType').textContent = data.product_type || 'N/A';
+            document.getElementById('productSize').textContent = data.product_size || 'N/A';
+            document.getElementById('colorName').textContent = data.color_name || 'N/A';
+            document.getElementById('currentStock').textContent = data.current_stock || 0;
+            //document.getElementById('wholesalePrice').textContent = data.wholesale_price ? `${data.wholesale_price} EGP` : 'N/A';
+            document.getElementById('retailPrice').textContent = data.retail_price ? `${data.retail_price} EGP` : 'N/A';
+            
+            // Set color badge
+            const colorBadge = document.getElementById('colorBadge');
+            if (data.color_code) {
+                colorBadge.style.backgroundColor = `#${data.color_code}`;
+                // Auto text color based on brightness
+                const brightness = parseInt(data.color_code.substring(0,2), 16) * 0.299 + 
+                                  parseInt(data.color_code.substring(2,4), 16) * 0.587 + 
+                                  parseInt(data.color_code.substring(4,6), 16) * 0.114;
+                colorBadge.style.color = brightness > 128 ? '#000' : '#fff';
+            }
+            
+            // Set image
+            const imgEl = document.getElementById('productImage');
+            if (data.image_url) {
+                imgEl.src = data.image_url;
+                imgEl.onerror = function() {
+                    this.src = 'https://via.placeholder.com/300x300/f0f0f0/999999?text=No+Image';
+                };
+            } else {
+                imgEl.src = 'https://via.placeholder.com/300x300/f0f0f0/999999?text=No+Image';
+            }
+            
+            // Add to recent
+            addToRecent(data.product_code, data.brand_name, data.color_name, barcode);
+            
+            playSound('success');
+        } else {
+            // Show not found
+            document.getElementById('notFoundCard').classList.remove('d-none');
+            document.getElementById('notFoundBarcode').textContent = barcode;
+            playSound('error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('error', 'Failed to lookup barcode');
+        playSound('error');
+    });
+}
+
+// Add to recent lookups
+function addToRecent(code, brand, color, barcode) {
+    const list = document.getElementById('recentList');
+    
+    // Remove "no lookups" message
+    const noLookups = list.querySelector('.text-muted');
+    if (noLookups) noLookups.remove();
+    
+    const now = new Date().toLocaleTimeString();
+    const item = document.createElement('li');
+    item.className = 'mb-2 p-2 border-bottom';
+    item.innerHTML = `
+        <strong>${code}</strong> - ${brand} - ${color}
+        <br><small class="text-muted">Barcode: ${barcode} | ${now}</small>
+    `;
+    list.prepend(item);
+    
+    // Keep only last 5
+    while (list.children.length > 5) {
+        list.removeChild(list.lastChild);
+    }
+}
+
+// Event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    // Lookup button
+    document.getElementById('lookupBtn').addEventListener('click', function() {
+        const barcode = document.getElementById('barcodeInput').value.trim();
+        lookupBarcode(barcode);
+    });
+    
+    // Enter key
+    document.getElementById('barcodeInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            const barcode = this.value.trim();
+            lookupBarcode(barcode);
+            this.value = '';
+        }
+    });
+    
+// Camera scanner
+document.getElementById('startCameraBtn').addEventListener('click', async function() {
+    try {
+        // ✅ Request camera permission first
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: "environment" } 
+        });
+        
+        // Stop the stream (we just needed permission)
+        stream.getTracks().forEach(track => track.stop());
+        
+        // Now start Html5Qrcode
+        document.getElementById('cameraView').style.display = 'block';
+        this.style.display = 'none';
+        
+        html5QrCode = new Html5Qrcode("reader");
+        
+        // ✅ Use facingMode instead of cameraId (back camera)
+        html5QrCode.start(
+            { facingMode: "environment" }, // Back camera
+            { fps: 10, qrbox: {width: 250, height: 250} },
+            (decodedText) => { 
+                // ✅ تأكد إن الباركود String وحافظ على الأصفار
+                let barcode = String(decodedText).trim();
+                
+                // ✅ لو باركود EAN-13 - تأكد إنه 13 رقم
+                if (/^\d+$/.test(barcode) && barcode.length <= 13) {
+                    barcode = barcode.padStart(13, '0');
+                }
+                
+                console.log('Scanned barcode:', barcode);
+                lookupBarcode(barcode); 
+            },
+            (errorMessage) => { /* Scanning... */ }
+        ).catch(err => {
+            console.error("Camera error:", err);
+            showToast('error', 'Failed to start camera');
+        });
+        
+    } catch(err) {
+        console.error("Camera permission denied:", err);
+        showToast('error', 'Camera access denied. Please allow camera in browser settings.');
+    }
+});
+    
+    // Stop camera
+    document.getElementById('stopCameraBtn').addEventListener('click', function() {
+        if (html5QrCode) {
+            html5QrCode.stop().then(() => {
+                document.getElementById('cameraView').style.display = 'none';
+                document.getElementById('startCameraBtn').style.display = 'block';
+            }).catch(err => {
+                console.error("Error stopping camera:", err);
+            });
+        }
+    });
+});
+
+// Sound function
+function playSound(type) {
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        if (type === 'success') {
+            oscillator.frequency.value = 800;
+            oscillator.type = 'sine';
+        } else {
+            oscillator.frequency.value = 300;
+            oscillator.type = 'square';
+        }
+        
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.2);
+    } catch(e) {
+        console.log("Could not play sound", e);
+    }
+}
+
+// Toast function
+function showToast(type, message) {
+    const colors = {
+        'success': '#28a745',
+        'error': '#dc3545',
+        'warning': '#ffc107',
+        'info': '#17a2b8'
+    };
+    
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: ${colors[type]};
+        color: white;
+        padding: 15px 20px;
+        border-radius: 5px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        z-index: 10000;
+        max-width: 300px;
+        animation: slideIn 0.3s ease-out;
+    `;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.animation = 'slideOut 0.3s ease-out';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+</script>
+
+<style>
+@keyframes slideIn {
+    from { transform: translateX(400px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+@keyframes slideOut {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(400px); opacity: 0; }
+}
+#reader {
+    border: 2px solid #007bff;
+    border-radius: 10px;
+}
+</style>
+{% endblock %}

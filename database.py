@@ -237,7 +237,7 @@ class StockDatabase:
                 old_value INTEGER,
                 new_value INTEGER,
                 change_amount INTEGER,
-                user_name TEXT DEFAULT 'Admin',
+                username TEXT DEFAULT 'Admin',
                 notes TEXT,
                 source_page TEXT,
                 source_url TEXT,
@@ -323,7 +323,54 @@ class StockDatabase:
             ON activity_logs(timestamp DESC)
         ''')
 
-        
+                # === BARCODE SYSTEM TABLES ===
+        print("Creating barcode system tables...")
+
+        # Barcodes table
+        cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS barcodes (
+            id {id_type},
+            variant_id INTEGER UNIQUE NOT NULL,
+            barcode_number TEXT UNIQUE NOT NULL,
+            image_path TEXT,
+            generated_at {timestamp_type},
+            generated_by INTEGER,
+            FOREIGN KEY (variant_id) REFERENCES product_variants(id) ON DELETE CASCADE,
+            FOREIGN KEY (generated_by) REFERENCES users(id)
+        )
+        ''')
+
+        # Create indexes for barcodes
+        try:
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_barcodes_variant ON barcodes(variant_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_barcodes_number ON barcodes(barcode_number)')
+        except:
+            pass
+
+        # Barcode Sessions table
+        cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS barcode_sessions (
+            id {id_type},
+            user_id INTEGER NOT NULL,
+            session_mode TEXT NOT NULL,
+            items TEXT,
+            created_at {timestamp_type},
+            last_updated {timestamp_type},
+            status TEXT DEFAULT 'active',
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+        ''')
+
+        # Create index for sessions
+        try:
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_user ON barcode_sessions(user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_status ON barcode_sessions(status)')
+        except:
+            pass
+
+        print("✅ Barcode system tables created!")
+
+
         # Initialize default pages
         self._initialize_default_pages(cursor)
         
@@ -365,6 +412,10 @@ class StockDatabase:
             # Admin
             ('backup_system', 'Backup System', 'Admin', '/admin/backup', 'Manage database backups', 50),
             ('user_management', 'User Management', 'Admin', '/user_management', 'Manage users and permissions', 51),
+
+            # Barcode System
+            ('barcode_system', 'Barcode System', 'Barcode', '/barcode/management', 'Complete barcode management system', 60),
+
         ]
         
         for page in pages_data:
@@ -713,7 +764,7 @@ class StockDatabase:
     def add_stock_log(self, operation_type, product_id=None, variant_id=None, 
                   product_code='', brand_name='', product_type='', color_name='',
                   image_url='', old_value=None, new_value=None, 
-                  user_name='Admin', notes='', source_page='', source_url=''):
+                  username='Admin', notes='', source_page='', source_url=''):
         """تسجيل عملية في الـ Stock Logs"""
         try:
             change_amount = None
@@ -726,11 +777,11 @@ class StockDatabase:
                 INSERT INTO stock_logs 
                 (operation_type, product_id, variant_id, product_code, brand_name, 
                 product_type, color_name, image_url, old_value, new_value, 
-                change_amount, user_name, notes, source_page, source_url)
+                change_amount, username, notes, source_page, source_url)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (operation_type, product_id, variant_id, product_code, brand_name,
                 product_type, color_name, image_url, old_value, new_value,
-                change_amount, user_name, notes, source_page, source_url))
+                change_amount, username, notes, source_page, source_url))
             
             conn.commit()
             conn.close()
@@ -870,7 +921,7 @@ class StockDatabase:
                     'old_value': log[9],
                     'new_value': log[10],
                     'change_amount': log[11],
-                    'user_name': log[12],
+                    'username': log[12],
                     'notes': log[13],
                     'source_page': log[14],
                     'source_url': log[15],
@@ -902,12 +953,12 @@ class StockDatabase:
                         INSERT OR IGNORE INTO stock_logs 
                         (operation_type, product_id, variant_id, product_code, brand_name,
                         product_type, color_name, image_url, old_value, new_value, 
-                        change_amount, user_name, notes, source_page, source_url, created_date)
+                        change_amount, username, notes, source_page, source_url, created_date)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (log['operation_type'], log['product_id'], log['variant_id'],
                         log['product_code'], log['brand_name'], log['product_type'],
                         log['color_name'], log['image_url'], log['old_value'], 
-                        log['new_value'], log['change_amount'], log['user_name'],
+                        log['new_value'], log['change_amount'], log['username'],
                         log['notes'], log['source_page'], log['source_url'],
                         log['created_date']))
                     imported += 1
@@ -2522,6 +2573,1055 @@ class StockDatabase:
                 'types': 0,
                 'colors': 0
             }
+        
+
+    # ====================================================================
+    # BARCODE SYSTEM FUNCTIONS
+    # ====================================================================
+
+    # === Basic Barcode Operations ===
+
+    def create_barcode(self, variant_id, barcode_number, image_path, user_id=None):
+        """Create a new barcode entry"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+            INSERT INTO barcodes (variant_id, barcode_number, image_path, generated_by)
+            VALUES (?, ?, ?, ?)
+            ''', (variant_id, barcode_number, image_path, user_id))
+            
+            barcode_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            
+            print(f"✅ Barcode created: {barcode_number} for variant {variant_id}")
+            return barcode_id
+            
+        except Exception as e:
+            print(f"❌ Error creating barcode: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return None
+
+    def get_barcode_by_variant(self, variant_id):
+        """Get barcode for a specific variant"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+            SELECT b.*, u.full_name as generated_by_name
+            FROM barcodes b
+            LEFT JOIN users u ON b.generated_by = u.id
+            WHERE b.variant_id = ?
+            ''', (variant_id,))
+            
+            barcode = cursor.fetchone()
+            conn.close()
+            return barcode
+            
+        except Exception as e:
+            print(f"❌ Error getting barcode: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return None
+
+    def get_barcode_by_number(self, barcode_number):
+        """Get barcode details by barcode number"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT 
+                    b.id,                    -- 0: barcode_id
+                    b.variant_id,            -- 1: variant_id
+                    b.barcode_number,        -- 2: barcode_number
+                    b.image_path,            -- 3: barcode_image_path
+                    pv.current_stock,        -- 4: current_stock
+                    bp.product_code,         -- 5: product_code
+                    br.brand_name,           -- 6: brand_name
+                    pt.type_name,            -- 7: product_type
+                    c.color_name,            -- 8: color_name
+                    c.color_code,            -- 9: color_code
+                    ci.image_url,            -- 10: product_image_url
+                    bp.wholesale_price,      -- 11: wholesale_price
+                    bp.retail_price,         -- 12: retail_price
+                    bp.product_size          -- 13: product_size
+                FROM barcodes b
+                JOIN product_variants pv ON b.variant_id = pv.id
+                JOIN base_products bp ON pv.base_product_id = bp.id
+                JOIN brands br ON bp.brand_id = br.id
+                JOIN product_types pt ON bp.product_type_id = pt.id
+                JOIN colors c ON pv.color_id = c.id
+                LEFT JOIN color_images ci ON pv.id = ci.variant_id
+                WHERE b.barcode_number = ?
+            """, (barcode_number,))
+            
+            result = cursor.fetchone()
+            conn.close()
+            return result
+            
+        except Exception as e:
+            print(f"❌ Error looking up barcode: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return None
+
+    def barcode_exists(self, barcode_number):
+        """Check if barcode already exists"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT COUNT(*) FROM barcodes WHERE barcode_number = ?', (barcode_number,))
+            count = cursor.fetchone()[0]
+            conn.close()
+            
+            return count > 0
+            
+        except Exception as e:
+            print(f"❌ Error checking barcode: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return False
+
+    def delete_barcode(self, variant_id):
+        """Delete barcode for a variant"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('DELETE FROM barcodes WHERE variant_id = ?', (variant_id,))
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error deleting barcode: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return False
+
+    # === Variants WITHOUT Barcode ===
+
+    def get_variants_without_barcode(self, search='', brand_filter='', type_filter='', color_filter='', limit=50, offset=0, in_stock_only=False):
+        """Get variants without barcodes with optional stock filter"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            query = """
+                SELECT 
+                    pv.id as variant_id,
+                    bp.product_code,
+                    br.brand_name,
+                    pt.type_name,
+                    c.color_name,
+                    c.color_code,
+                    pv.current_stock,
+                    ci.image_url,
+                    bp.product_size
+                FROM product_variants pv
+                JOIN base_products bp ON pv.base_product_id = bp.id
+                JOIN brands br ON bp.brand_id = br.id
+                JOIN product_types pt ON bp.product_type_id = pt.id
+                JOIN colors c ON pv.color_id = c.id
+                LEFT JOIN color_images ci ON pv.id = ci.variant_id
+                LEFT JOIN barcodes b ON pv.id = b.variant_id
+                WHERE b.id IS NULL
+            """
+            params = []
+            
+            if in_stock_only:
+                query += " AND pv.current_stock > 0"
+            
+            if search:
+                query += """ AND (bp.product_code LIKE ? OR br.brand_name LIKE ? 
+                            OR c.color_name LIKE ?)"""
+                search_param = f'%{search}%'
+                params.extend([search_param, search_param, search_param])
+            
+            if brand_filter:
+                query += " AND br.brand_name = ?"
+                params.append(brand_filter)
+            
+            if type_filter:
+                query += " AND pt.type_name = ?"
+                params.append(type_filter)
+            
+            if color_filter:
+                query += " AND c.color_name = ?"
+                params.append(color_filter)
+            
+            query += " ORDER BY br.brand_name, bp.product_code, c.color_name"
+            query += " LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+            
+            cursor.execute(query, params)
+            variants = cursor.fetchall()
+            conn.close()
+            
+            return variants
+            
+        except Exception as e:
+            print(f"❌ Error getting variants without barcode: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return []
+
+    def count_variants_without_barcode(self, search='', brand_filter='', type_filter='', color_filter='', in_stock_only=False):
+        """Count variants without barcodes with optional stock filter"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            query = """
+                SELECT COUNT(*)
+                FROM product_variants pv
+                JOIN base_products bp ON pv.base_product_id = bp.id
+                JOIN brands br ON bp.brand_id = br.id
+                JOIN product_types pt ON bp.product_type_id = pt.id
+                JOIN colors c ON pv.color_id = c.id
+                LEFT JOIN barcodes b ON pv.id = b.variant_id
+                WHERE b.id IS NULL
+            """
+            params = []
+            
+            if in_stock_only:
+                query += " AND pv.current_stock > 0"
+            
+            if search:
+                query += """ AND (bp.product_code LIKE ? OR br.brand_name LIKE ? 
+                            OR c.color_name LIKE ?)"""
+                search_param = f'%{search}%'
+                params.extend([search_param, search_param, search_param])
+            
+            if brand_filter:
+                query += " AND br.brand_name = ?"
+                params.append(brand_filter)
+            
+            if type_filter:
+                query += " AND pt.type_name = ?"
+                params.append(type_filter)
+            
+            if color_filter:
+                query += " AND c.color_name = ?"
+                params.append(color_filter)
+            
+            cursor.execute(query, params)
+            count = cursor.fetchone()[0]
+            conn.close()
+            
+            return count
+            
+        except Exception as e:
+            print(f"❌ Error counting variants without barcode: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return 0
+
+    # === Variants WITH Barcode ===
+
+    def get_variants_with_barcode(self, search='', brand_filter='', type_filter='', 
+                                   color_filter='', limit=50, offset=0):
+        """Get all variants that have barcodes"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            query = '''
+            SELECT 
+                pv.id as variant_id,
+                bp.product_code,
+                br.brand_name,
+                pt.type_name,
+                c.color_name,
+                c.color_code,
+                pv.current_stock,
+                ci.image_url,
+                bp.product_size,
+                b.barcode_number,
+                b.image_path as barcode_image,
+                b.generated_at
+            FROM product_variants pv
+            JOIN base_products bp ON pv.base_product_id = bp.id
+            JOIN brands br ON bp.brand_id = br.id
+            JOIN product_types pt ON bp.product_type_id = pt.id
+            JOIN colors c ON pv.color_id = c.id
+            LEFT JOIN color_images ci ON pv.id = ci.variant_id
+            JOIN barcodes b ON pv.id = b.variant_id
+            WHERE 1=1
+            '''
+            
+            params = []
+            
+            if search:
+                query += ' AND (bp.product_code LIKE ? OR br.brand_name LIKE ? OR c.color_name LIKE ? OR b.barcode_number LIKE ?)'
+                search_param = f'%{search}%'
+                params.extend([search_param, search_param, search_param, search_param])
+            
+            if brand_filter:
+                query += ' AND br.brand_name = ?'
+                params.append(brand_filter)
+            
+            if type_filter:
+                query += ' AND pt.type_name = ?'
+                params.append(type_filter)
+            
+            if color_filter:
+                query += ' AND c.color_name = ?'
+                params.append(color_filter)
+            
+            query += ' ORDER BY br.brand_name, bp.product_code, c.color_name LIMIT ? OFFSET ?'
+            params.extend([limit, offset])
+            
+            cursor.execute(query, params)
+            variants = cursor.fetchall()
+            conn.close()
+            
+            return variants
+            
+        except Exception as e:
+            print(f"❌ Error getting variants with barcode: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return []
+
+    def count_variants_with_barcode(self, search='', brand_filter='', type_filter='', color_filter=''):
+        """Count variants with barcodes"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            query = '''
+            SELECT COUNT(*)
+            FROM product_variants pv
+            JOIN base_products bp ON pv.base_product_id = bp.id
+            JOIN brands br ON bp.brand_id = br.id
+            JOIN product_types pt ON bp.product_type_id = pt.id
+            JOIN colors c ON pv.color_id = c.id
+            JOIN barcodes b ON pv.id = b.variant_id
+            WHERE 1=1
+            '''
+            
+            params = []
+            
+            if search:
+                query += ' AND (bp.product_code LIKE ? OR br.brand_name LIKE ? OR c.color_name LIKE ? OR b.barcode_number LIKE ?)'
+                search_param = f'%{search}%'
+                params.extend([search_param, search_param, search_param, search_param])
+            
+            if brand_filter:
+                query += ' AND br.brand_name = ?'
+                params.append(brand_filter)
+            
+            if type_filter:
+                query += ' AND pt.type_name = ?'
+                params.append(type_filter)
+            
+            if color_filter:
+                query += ' AND c.color_name = ?'
+                params.append(color_filter)
+            
+            cursor.execute(query, params)
+            count = cursor.fetchone()[0]
+            conn.close()
+            
+            return count
+            
+        except Exception as e:
+            print(f"❌ Error counting variants: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return 0
+
+    # === Barcode Image Management ===
+
+    def get_barcodes_with_image_status(self, search='', brand_filter='', type_filter='', 
+                                        color_filter='', image_filter='all', limit=50, offset=0):
+        """Get variants with barcodes and check image status"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            query = """
+                SELECT 
+                    pv.id as variant_id,
+                    bp.product_code,
+                    br.brand_name,
+                    pt.type_name,
+                    c.color_name,
+                    c.color_code,
+                    pv.current_stock,
+                    ci.image_url,
+                    bp.product_size,
+                    b.barcode_number,
+                    b.image_path as barcode_image,
+                    b.generated_at
+                FROM product_variants pv
+                JOIN base_products bp ON pv.base_product_id = bp.id
+                JOIN brands br ON bp.brand_id = br.id
+                JOIN product_types pt ON bp.product_type_id = pt.id
+                JOIN colors c ON pv.color_id = c.id
+                LEFT JOIN color_images ci ON pv.id = ci.variant_id
+                JOIN barcodes b ON pv.id = b.variant_id
+                WHERE 1=1
+            """
+            params = []
+            
+            if search:
+                query += """ AND (bp.product_code LIKE ? OR br.brand_name LIKE ? 
+                            OR c.color_name LIKE ? OR b.barcode_number LIKE ?)"""
+                search_param = f'%{search}%'
+                params.extend([search_param, search_param, search_param, search_param])
+            
+            if brand_filter:
+                query += " AND br.brand_name = ?"
+                params.append(brand_filter)
+            
+            if type_filter:
+                query += " AND pt.type_name = ?"
+                params.append(type_filter)
+            
+            if color_filter:
+                query += " AND c.color_name = ?"
+                params.append(color_filter)
+            
+            query += " ORDER BY br.brand_name, bp.product_code, c.color_name"
+            query += " LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+            
+            cursor.execute(query, params)
+            variants = cursor.fetchall()
+            conn.close()
+            
+            # Check image existence for each variant
+            results = []
+            for v in variants:
+                image_path = v[10]  # barcode_image
+                
+                # Check if image file exists
+                image_exists = False
+                if image_path and os.path.exists(image_path):
+                    if os.path.getsize(image_path) > 1024:  # > 1KB
+                        image_exists = True
+                
+                # Apply image filter
+                if image_filter == 'with_image' and not image_exists:
+                    continue
+                elif image_filter == 'missing_image' and image_exists:
+                    continue
+                
+                results.append({
+                    'variant_id': v[0],
+                    'product_code': v[1],
+                    'brand_name': v[2],
+                    'type_name': v[3],
+                    'color_name': v[4],
+                    'color_code': v[5],
+                    'current_stock': v[6],
+                    'image_url': v[7],
+                    'product_size': v[8],
+                    'barcode_number': v[9],
+                    'barcode_image': v[10],
+                    'generated_at': v[11],
+                    'image_exists': image_exists
+                })
+            
+            return results
+            
+        except Exception as e:
+            print(f"❌ Error getting barcodes with image status: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return []
+
+    def count_barcode_image_status(self):
+        """Count barcodes by image status"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT barcode_number, image_path
+                FROM barcodes
+            """)
+            barcodes = cursor.fetchall()
+            conn.close()
+            
+            total = len(barcodes)
+            with_image = 0
+            missing_image = 0
+            
+            for barcode in barcodes:
+                image_path = barcode[1]
+                
+                # Check if image exists
+                if image_path and os.path.exists(image_path):
+                    if os.path.getsize(image_path) > 1024:
+                        with_image += 1
+                    else:
+                        missing_image += 1
+                else:
+                    missing_image += 1
+            
+            return {
+                'total': total,
+                'with_image': with_image,
+                'missing_image': missing_image
+            }
+            
+        except Exception as e:
+            print(f"❌ Error counting image status: {e}")
+            return {'total': 0, 'with_image': 0, 'missing_image': 0}
+
+    def update_barcode_image_path(self, variant_id, image_path):
+        """Update barcode image path"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                UPDATE barcodes 
+                SET image_path = ?
+                WHERE variant_id = ?
+            """, (image_path, variant_id))
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error updating barcode image path: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return False
+
+    # === Statistics ===
+
+    def get_barcode_stats(self):
+        """Get barcode system statistics"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # Total variants
+            cursor.execute('SELECT COUNT(*) FROM product_variants')
+            total_variants = cursor.fetchone()[0]
+            
+            # Variants with barcode
+            cursor.execute('SELECT COUNT(*) FROM barcodes')
+            with_barcode = cursor.fetchone()[0]
+            
+            # Variants without barcode
+            without_barcode = total_variants - with_barcode
+            
+            # Completion rate
+            completion_rate = (with_barcode / total_variants * 100) if total_variants > 0 else 0
+            
+            conn.close()
+            
+            return {
+                'total_variants': total_variants,
+                'with_barcode': with_barcode,
+                'without_barcode': without_barcode,
+                'completion_rate': round(completion_rate, 1)
+            }
+            
+        except Exception as e:
+            print(f"❌ Error getting barcode stats: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return {
+                'total_variants': 0,
+                'with_barcode': 0,
+                'without_barcode': 0,
+                'completion_rate': 0
+            }
+
+    # === Session Management ===
+
+    def create_scan_session(self, user_id, mode):
+        """Create a new barcode scanning session"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+            INSERT INTO barcode_sessions (user_id, session_mode, items, status)
+            VALUES (?, ?, ?, 'active')
+            ''', (user_id, mode, '[]'))
+            
+            session_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            
+            print(f"✅ Scan session created: {session_id} for user {user_id}")
+            return session_id
+            
+        except Exception as e:
+            print(f"❌ Error creating session: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return None
+
+    def get_active_session(self, user_id):
+        """Get active session for a user"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+            SELECT * FROM barcode_sessions
+            WHERE user_id = ? AND status = 'active'
+            ORDER BY created_at DESC
+            LIMIT 1
+            ''', (user_id,))
+            
+            session = cursor.fetchone()
+            conn.close()
+            return session
+            
+        except Exception as e:
+            print(f"❌ Error getting active session: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return None
+
+    def update_session_items(self, session_id, items_json):
+        """Update session items"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+            UPDATE barcode_sessions
+            SET items = ?, last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+            ''', (items_json, session_id))
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error updating session: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return False
+        
+
+    def add_item_to_session(self, session_id, variant_id):
+        """Add item to session or increment quantity if exists"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # Get current session items
+            cursor.execute('SELECT items FROM barcode_sessions WHERE id = ?', (session_id,))
+            result = cursor.fetchone()
+            
+            if not result:
+                conn.close()
+                return False
+            
+            # Parse current items
+            items_json = result[0] or '[]'
+            items = json.loads(items_json) if items_json else []
+            
+            # Check if item already exists
+            item_found = False
+            for item in items:
+                if item.get('variant_id') == variant_id:
+                    item['quantity'] = item.get('quantity', 1) + 1
+                    item_found = True
+                    break
+            
+            # If not found, add new item
+            if not item_found:
+                items.append({
+                    'variant_id': variant_id,
+                    'quantity': 1
+                })
+            
+            # Update session
+            cursor.execute('''
+            UPDATE barcode_sessions 
+            SET items = ?, last_updated = CURRENT_TIMESTAMP 
+            WHERE id = ?
+            ''', (json.dumps(items), session_id))
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error adding item to session: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return False
+
+    def get_variant_by_barcode(self, barcode):
+        """Get variant ID by barcode number"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+            SELECT pv.id, bp.product_code, br.brand_name, pt.type_name, 
+                c.color_name, c.color_code, pv.current_stock, ci.image_url, bp.product_size
+            FROM barcodes b
+            JOIN product_variants pv ON b.variant_id = pv.id
+            JOIN base_products bp ON pv.base_product_id = bp.id
+            JOIN brands br ON bp.brand_id = br.id
+            JOIN product_types pt ON bp.product_type_id = pt.id
+            JOIN colors c ON pv.color_id = c.id
+            LEFT JOIN color_images ci ON pv.id = ci.variant_id
+            WHERE b.barcode_number = ?
+            LIMIT 1
+            ''', (barcode,))
+            
+            variant = cursor.fetchone()
+            conn.close()
+            return variant
+            
+        except Exception as e:
+            print(f"❌ Error getting variant by barcode: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return None
+        
+    def get_session_items_with_details(self, session_id):
+        """Get session items with full product details"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # Get session items
+            cursor.execute('SELECT items FROM barcode_sessions WHERE id = ?', (session_id,))
+            result = cursor.fetchone()
+            
+            if not result:
+                conn.close()
+                return []
+            
+            items_json = result[0] or '[]'
+            items = json.loads(items_json) if items_json else []
+            
+            # Get details for each item
+            detailed_items = []
+            for item in items:
+                variant_id = item.get('variant_id')
+                quantity = item.get('quantity', 1)
+                
+                # Get variant details - شيلنا ci.is_primary
+                cursor.execute('''
+                SELECT pv.id, bp.product_code, br.brand_name, pt.type_name,
+                    c.color_name, pv.current_stock, ci.image_url
+                FROM product_variants pv
+                JOIN base_products bp ON pv.base_product_id = bp.id
+                JOIN brands br ON bp.brand_id = br.id
+                JOIN product_types pt ON bp.product_type_id = pt.id
+                JOIN colors c ON pv.color_id = c.id
+                LEFT JOIN color_images ci ON pv.id = ci.variant_id
+                WHERE pv.id = ?
+                LIMIT 1
+                ''', (variant_id,))
+                
+                variant_data = cursor.fetchone()
+                if variant_data:
+                    detailed_items.append({
+                        'variant_id': variant_data[0],
+                        'product_code': variant_data[1],
+                        'brand_name': variant_data[2],
+                        'product_type': variant_data[3],
+                        'color_name': variant_data[4],
+                        'current_stock': variant_data[5],
+                        'image_url': variant_data[6],
+                        'quantity': quantity
+                    })
+            
+            conn.close()
+            return detailed_items
+            
+        except Exception as e:
+            print(f"❌ Error getting session items with details: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return []
+
+
+    def close_session(self, session_id, status='confirmed'):
+        """Close a session with status (confirmed/cancelled)"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+            UPDATE barcode_sessions
+            SET status = ?, last_updated = CURRENT_TIMESTAMP
+            WHERE id = ?
+            ''', (status, session_id))
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error closing session: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return False
+
+    def cleanup_old_sessions(self, hours=24):
+        """Cleanup sessions older than X hours"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            if self.db_type == 'postgresql':
+                cursor.execute('''
+                UPDATE barcode_sessions
+                SET status = 'cancelled'
+                WHERE status = 'active' 
+                AND created_at < NOW() - INTERVAL '%s hours'
+                ''', (hours,))
+            else:
+                cursor.execute('''
+                UPDATE barcode_sessions
+                SET status = 'cancelled'
+                WHERE status = 'active' 
+                AND created_at < datetime('now', '-' || ? || ' hours')
+                ''', (hours,))
+            
+            rows_affected = cursor.rowcount
+            conn.commit()
+            conn.close()
+            
+            print(f"✅ Cleaned up {rows_affected} old sessions")
+            return rows_affected
+            
+        except Exception as e:
+            print(f"❌ Error cleaning up sessions: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return 0
+
+    def get_variant_details_for_barcode(self, variant_id):
+        """Get all variant details needed for barcode generation"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+            SELECT 
+                pv.id as variant_id,
+                bp.product_code,
+                br.brand_name,
+                pt.type_name,
+                c.color_name,
+                c.color_code,
+                pv.current_stock,
+                ci.image_url,
+                bp.product_size
+            FROM product_variants pv
+            JOIN base_products bp ON pv.base_product_id = bp.id
+            JOIN brands br ON bp.brand_id = br.id
+            JOIN product_types pt ON bp.product_type_id = pt.id
+            JOIN colors c ON pv.color_id = c.id
+            LEFT JOIN color_images ci ON pv.id = ci.variant_id
+            WHERE pv.id = ?
+            ''', (variant_id,))
+            
+            variant = cursor.fetchone()
+            conn.close()
+            return variant
+            
+        except Exception as e:
+            print(f"❌ Error getting variant details: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return None
+
+
+    # ========================================
+    # BARCODE IMAGE MANAGEMENT
+    # ========================================
+    
+    def get_barcodes_with_image_status(self, search='', brand_filter='', type_filter='', color_filter='', image_filter='all', limit=50, offset=0):
+        """
+        Get variants with barcodes and check image status
+        
+        Args:
+            image_filter: 'all', 'with_image', 'missing_image'
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            query = """
+                SELECT 
+                    pv.id as variant_id,
+                    bp.product_code,
+                    br.brand_name,
+                    pt.type_name,
+                    c.color_name,
+                    c.color_code,
+                    pv.current_stock,
+                    ci.image_url,
+                    bp.product_size,
+                    b.barcode_number,
+                    b.image_path as barcode_image,
+                    b.generated_at
+                FROM product_variants pv
+                JOIN base_products bp ON pv.base_product_id = bp.id
+                JOIN brands br ON bp.brand_id = br.id
+                JOIN product_types pt ON bp.product_type_id = pt.id
+                JOIN colors c ON pv.color_id = c.id
+                LEFT JOIN color_images ci ON pv.id = ci.variant_id
+                JOIN barcodes b ON pv.id = b.variant_id
+                WHERE 1=1
+            """
+            params = []
+            
+            if search:
+                query += """ AND (bp.product_code LIKE ? OR br.brand_name LIKE ? 
+                            OR c.color_name LIKE ? OR b.barcode_number LIKE ?)"""
+                search_param = f'%{search}%'
+                params.extend([search_param, search_param, search_param, search_param])
+            
+            if brand_filter:
+                query += " AND br.brand_name = ?"
+                params.append(brand_filter)
+            
+            if type_filter:
+                query += " AND pt.type_name = ?"
+                params.append(type_filter)
+            
+            if color_filter:
+                query += " AND c.color_name = ?"
+                params.append(color_filter)
+            
+            query += " ORDER BY br.brand_name, bp.product_code, c.color_name"
+            query += " LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+            
+            cursor.execute(query, params)
+            variants = cursor.fetchall()
+            conn.close()
+            
+            # Check image existence for each variant
+            results = []
+            for v in variants:
+                image_path = v[10]  # barcode_image
+                
+                # Check if image file exists
+                image_exists = False
+                if image_path and os.path.exists(image_path):
+                    # Check file size (must be > 1KB)
+                    if os.path.getsize(image_path) > 1024:
+                        image_exists = True
+                
+                # Apply image filter
+                if image_filter == 'with_image' and not image_exists:
+                    continue
+                elif image_filter == 'missing_image' and image_exists:
+                    continue
+                
+                results.append({
+                    'variant_id': v[0],
+                    'product_code': v[1],
+                    'brand_name': v[2],
+                    'type_name': v[3],
+                    'color_name': v[4],
+                    'color_code': v[5],
+                    'current_stock': v[6],
+                    'image_url': v[7],
+                    'product_size': v[8],
+                    'barcode_number': v[9],
+                    'barcode_image': v[10],
+                    'generated_at': v[11],
+                    'image_exists': image_exists
+                })
+            
+            return results
+            
+        except Exception as e:
+            print(f"❌ Error getting barcodes with image status: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return []
+    
+    def count_barcode_image_status(self):
+        """
+        Count barcodes by image status
+        
+        Returns:
+            dict: {'total': int, 'with_image': int, 'missing_image': int}
+        """
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT barcode_number, image_path
+                FROM barcodes
+            """)
+            barcodes = cursor.fetchall()
+            conn.close()
+            
+            total = len(barcodes)
+            with_image = 0
+            missing_image = 0
+            
+            for barcode in barcodes:
+                image_path = barcode[1]
+                
+                # Check if image exists
+                if image_path and os.path.exists(image_path):
+                    if os.path.getsize(image_path) > 1024:
+                        with_image += 1
+                    else:
+                        missing_image += 1
+                else:
+                    missing_image += 1
+            
+            return {
+                'total': total,
+                'with_image': with_image,
+                'missing_image': missing_image
+            }
+            
+        except Exception as e:
+            print(f"❌ Error counting image status: {e}")
+            return {'total': 0, 'with_image': 0, 'missing_image': 0}
+    
+    def update_barcode_image_path(self, variant_id, image_path):
+        """Update barcode image path"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                UPDATE barcodes 
+                SET image_path = ?
+                WHERE variant_id = ?
+            """, (image_path, variant_id))
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error updating barcode image path: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return False
+
 
 # اختبار قاعدة البيانات المحدثة
 if __name__ == "__main__":

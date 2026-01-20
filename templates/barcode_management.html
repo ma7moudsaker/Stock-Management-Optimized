@@ -1,0 +1,1018 @@
+{% extends "base.html" %}
+
+{% block title %}Barcode Management - Stock Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-barcode"></i> Barcode Management</h2>
+        <div>
+            <button class="btn btn-primary" onclick="location.href='{{ url_for('barcode_printing') }}'">
+                <i class="fas fa-print"></i> Print Labels
+            </button>
+        </div>
+    </div>
+
+    <p class="text-muted">Generate and manage product barcodes</p>
+
+    <!-- Toast Container for Notifications -->
+    <div class="position-fixed top-0 end-0 p-3" style="z-index: 11000">
+        <div id="successToast" class="toast align-items-center text-white bg-success border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <i class="fas fa-check-circle me-2"></i>
+                    <span id="toastMessage"></span>
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="fas fa-cubes fa-2x text-primary mb-2"></i>
+                    <h5 class="card-title">Total Variants</h5>
+                    <h3 class="text-primary">{{ stats.total_variants|default(0) }}</h3>
+                    <small class="text-muted">Product variants</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card text-center border-success">
+                <div class="card-body">
+                    <i class="fas fa-check-circle fa-2x text-success mb-2"></i>
+                    <h5 class="card-title">With Barcode</h5>
+                    <h3 class="text-success">{{ stats.with_barcode|default(0) }}</h3>
+                    <small class="text-muted">
+                        {% if stats.total_variants > 0 %}
+                            {{ ((stats.with_barcode / stats.total_variants) * 100)|round(1) }}% complete
+                        {% else %}
+                            0% complete
+                        {% endif %}
+                    </small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card text-center border-danger">
+                <div class="card-body">
+                    <i class="fas fa-times-circle fa-2x text-danger mb-2"></i>
+                    <h5 class="card-title">Without Barcode</h5>
+                    <h3 class="text-danger">{{ stats.without_barcode|default(0) }}</h3>
+                    <small class="text-muted">Need generation</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card text-center border-info">
+                <div class="card-body">
+                    <i class="fas fa-percentage fa-2x text-info mb-2"></i>
+                    <h5 class="card-title">Completion</h5>
+                    <h3 class="text-info">{{ stats.completion_rate|default(0) }}%</h3>
+                    <small class="text-muted">Coverage rate</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Status Statistics (Only show in With Barcode tab) -->
+    {% if tab == 'with' %}
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card text-center border-success">
+                <div class="card-body">
+                    <i class="fas fa-image fa-2x text-success mb-2"></i>
+                    <h5 class="card-title">Barcode Images OK</h5>
+                    <h3 class="text-success">{{ stats.with_image|default(0) }}</h3>
+                    <small class="text-muted">
+                        {% if stats.with_barcode > 0 %}
+                            {{ ((stats.with_image / stats.with_barcode) * 100)|round(1) }}% of barcodes
+                        {% else %}
+                            0%
+                        {% endif %}
+                    </small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card text-center border-danger">
+                <div class="card-body">
+                    <i class="fas fa-exclamation-triangle fa-2x text-danger mb-2"></i>
+                    <h5 class="card-title">Missing Images</h5>
+                    <h3 class="text-danger">{{ stats.missing_image|default(0) }}</h3>
+                    <small class="text-muted">
+                        {% if stats.with_barcode > 0 %}
+                            {{ ((stats.missing_image / stats.with_barcode) * 100)|round(1) }}% missing
+                        {% else %}
+                            0%
+                        {% endif %}
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Alert Banner for Missing Images -->
+    {% if stats.missing_image > 0 and tab == 'with' %}
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>Warning:</strong> 
+                {{ stats.missing_image }} barcode image{{ 's' if stats.missing_image > 1 else '' }} 
+                {{ 'are' if stats.missing_image > 1 else 'is' }} missing!
+                <br>
+                <small class="text-muted">
+                    These barcodes exist in the database but their image files are missing or corrupted.
+                </small>
+            </div>
+            <div>
+                <button class="btn btn-warning" onclick="filterMissingImages()">
+                    <i class="fas fa-filter"></i> Show Missing
+                </button>
+            </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link {% if tab == 'without' %}active{% endif %}" 
+               href="?tab=without">
+                <i class="fas fa-times-circle"></i> Without Barcode
+                {% if stats.without_barcode > 0 %}
+                <span class="badge bg-danger">{{ stats.without_barcode }}</span>
+                {% endif %}
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if tab == 'with' %}active{% endif %}" 
+               href="?tab=with">
+                <i class="fas fa-check-circle"></i> With Barcode
+                {% if stats.with_barcode > 0 %}
+                <span class="badge bg-success">{{ stats.with_barcode }}</span>
+                {% endif %}
+            </a>
+        </li>
+    </ul>
+
+    <!-- Image Filter Toggle Buttons (Only in "With Barcode" tab) -->
+    {% if tab == 'with' %}
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="fw-bold"><i class="fas fa-image"></i> Image Status:</span>
+                <div class="btn-group" role="group">
+                    <input type="radio" class="btn-check" name="imageFilter" id="filterAll" 
+                           {% if image_filter == 'all' %}checked{% endif %}>
+                    <label class="btn btn-outline-secondary" for="filterAll" onclick="setImageFilter('all')">
+                        <i class="fas fa-list"></i> All
+                    </label>
+
+                    <input type="radio" class="btn-check" name="imageFilter" id="filterWithImage" 
+                           {% if image_filter == 'with_image' %}checked{% endif %}>
+                    <label class="btn btn-outline-success" for="filterWithImage" onclick="setImageFilter('with_image')">
+                        <i class="fas fa-check"></i> With Images
+                        <span class="badge bg-success">{{ stats.with_image|default(0) }}</span>
+                    </label>
+
+                    <input type="radio" class="btn-check" name="imageFilter" id="filterMissing" 
+                           {% if image_filter == 'missing_image' %}checked{% endif %}>
+                    <label class="btn btn-outline-danger" for="filterMissing" onclick="setImageFilter('missing_image')">
+                        <i class="fas fa-exclamation-triangle"></i> Missing Images
+                        <span class="badge bg-danger">{{ stats.missing_image|default(0) }}</span>
+                    </label>
+                </div>
+                
+                <!-- Bulk Regenerate (show only for missing images) -->
+                {% if image_filter == 'missing_image' and variants|length > 0 %}
+                <div class="ms-auto">
+                    <button class="btn btn-warning" onclick="regenerateAllVisible()">
+                        <i class="fas fa-sync"></i> Regenerate All Visible
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Filters -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <form method="GET" class="row g-3" id="filterForm">
+                <input type="hidden" name="tab" value="{{ tab }}">
+                {% if tab == 'with' %}
+                <input type="hidden" name="image_filter" value="{{ image_filter }}">
+                {% endif %}
+                
+                <!-- الـ Stock Filter للـ Without Barcode tab -->
+                {% if tab == 'without' %}
+                <input type="hidden" name="stock_filter" id="stockFilterInput" value="{{ request.args.get('stock_filter', '') }}">
+                {% endif %}
+                
+                <div class="col-md-3">
+                    <label class="form-label">Search</label>
+                    <input type="text" class="form-control" name="search" 
+                           placeholder="Product code, brand, color..." 
+                           value="{{ search }}">
+                </div>
+                
+                <div class="col-md-2">
+                    <label class="form-label">Brand</label>
+                    <select class="form-select" name="brand">
+                        <option value="">All Brands</option>
+                        {% for brand in brands %}
+                        <option value="{{ brand }}" {% if brand == brand_filter %}selected{% endif %}>
+                            {{ brand }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-2">
+                    <label class="form-label">Type</label>
+                    <select class="form-select" name="type">
+                        <option value="">All Types</option>
+                        {% for type in types %}
+                        <option value="{{ type }}" {% if type == type_filter %}selected{% endif %}>
+                            {{ type }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-2">
+                    <label class="form-label">Color</label>
+                    <select class="form-select" name="color">
+                        <option value="">All Colors</option>
+                        {% for color in colors %}
+                        <option value="{{ color }}" {% if color == color_filter %}selected{% endif %}>
+                            {{ color }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-3 d-flex align-items-end gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-search"></i> Filter
+                    </button>
+                    <a href="?tab={{ tab }}" class="btn btn-secondary">
+                        <i class="fas fa-redo"></i> Reset
+                    </a>
+                </div>
+            </form>
+            
+            <!-- NEW: Stock Filter Checkbox (Only in Without Barcode tab) -->
+            {% if tab == 'without' %}
+            <div class="mt-3 pt-3 border-top">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="showInStockOnly" 
+                           {% if request.args.get('stock_filter') == 'in_stock' %}checked{% endif %}
+                           onchange="toggleStockFilter(this.checked)">
+                    <label class="form-check-label" for="showInStockOnly">
+                        <i class="fas fa-box text-success"></i>
+                        <strong>Show only items in stock</strong>
+                    </label>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Missing Images Filter (Only in With Barcode tab) -->
+            {% if tab == 'with' %}
+            <div class="mt-3 pt-3 border-top">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="showMissingOnly" 
+                           {% if image_filter == 'missing_image' %}checked{% endif %}
+                           onchange="toggleMissingFilter(this.checked)">
+                    <label class="form-check-label" for="showMissingOnly">
+                        <i class="fas fa-filter text-danger"></i>
+                        <strong>Show only items with missing barcode images</strong>
+                        <span class="badge bg-danger ms-2">{{ stats.missing_image|default(0) }}</span>
+                    </label>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+
+    <!-- Results -->
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">
+                {% if tab == 'without' %}
+                    Variants Without Barcode
+                {% else %}
+                    Variants With Barcode
+                    {% if image_filter == 'with_image' %}
+                        - Images OK
+                    {% elif image_filter == 'missing_image' %}
+                        - Missing Images
+                    {% endif %}
+                {% endif %}
+                <span class="badge bg-light text-dark ms-2">{{ total_count }}</span>
+            </h5>
+        </div>
+        <div class="card-body p-0">
+            {% if variants|length > 0 %}
+                {% if tab == 'without' %}
+                    <!-- WITHOUT BARCODE TABLE (WITH SELECT CHECKBOXES) -->
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>
+                                        <input type="checkbox" id="selectAllWithout" onchange="toggleSelectAllWithout(this)">
+                                    </th>
+                                    <th style="width: 80px;">Image</th>
+                                    <th>Product Code</th>
+                                    <th>Brand</th>
+                                    <th>Type</th>
+                                    <th>Color</th>
+                                    <th>Stock</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for variant in variants %}
+                                <tr>
+                                    <td>
+                                        <input type="checkbox" class="variant-checkbox-without" value="{{ variant[0] }}">
+                                    </td>
+                                    <td>
+                                        {% if variant[7] %}
+                                        <img src="{{ variant[7] }}" class="img-thumbnail" style="width: 60px; height: 60px; object-fit: cover;">
+                                        {% else %}
+                                        <div class="bg-secondary text-white d-flex align-items-center justify-content-center" 
+                                             style="width: 60px; height: 60px;">
+                                            <i class="fas fa-image"></i>
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <strong>{{ variant[1] }}</strong>
+                                        {% if variant[8] %}
+                                        <br><small class="text-muted">{{ variant[8] }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ variant[2] }}</td>
+                                    <td>{{ variant[3] }}</td>
+                                    <td>{{ variant[4] }}</td>
+                                    <td>
+                                        {% if variant[6] > 0 %}
+                                        <span class="badge bg-success">{{ variant[6] }}</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">Out of Stock</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-primary" 
+                                                onclick="generateBarcode({{ variant[0] }}, '{{ variant[1] }}', '{{ variant[4] }}')">
+                                            <i class="fas fa-plus"></i> Generate
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                        <!-- Bulk Generate Footer -->
+                        {% if variants|length > 0 %}
+                        <div class="card-footer">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span id="selectedCountWithout">0</span> selected
+                                </div>
+                                <div class="btn-group gap-2">
+                                    <button class="btn btn-primary" id="generateSelectedBtn" 
+                                            onclick="generateSelectedBarcodes()" disabled>
+                                        <i class="fas fa-plus"></i> Generate Selected (<span id="selectedCountBadge">0</span>)
+                                    </button>
+                                    <button class="btn btn-success" onclick="generateAllBarcodes()">
+                                        <i class="fas fa-magic"></i> Generate All ({{ variants|length }})
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+
+
+
+                    <!-- Bulk Generate -->
+                    {% if variants|length > 0 %}
+                    <div class="card-footer">
+                        <button class="btn btn-success" onclick="generateAllBarcodes()">
+                            <i class="fas fa-magic"></i> Generate All ({{ variants|length }})
+                        </button>
+                    </div>
+                    {% endif %}
+
+                {% else %}
+                    <!-- WITH BARCODE TABLE -->
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>
+                                        <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)">
+                                    </th>
+                                    <th style="width: 80px;">Image</th>
+                                    <th>Product Code</th>
+                                    <th>Brand</th>
+                                    <th>Color</th>
+                                    <th>Stock</th>
+                                    <th>Barcode</th>
+                                    <th>Generated</th>
+                                    <th>Image Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for variant in variants %}
+                                <tr>
+                                    <td>
+                                        <input type="checkbox" class="variant-checkbox" value="{{ variant.variant_id }}">
+                                    </td>
+                                    <td>
+                                        {% if variant.image_url %}
+                                        <img src="{{ variant.image_url }}" class="img-thumbnail" style="width: 60px; height: 60px; object-fit: cover;">
+                                        {% else %}
+                                        <div class="bg-secondary text-white d-flex align-items-center justify-content-center" 
+                                             style="width: 60px; height: 60px;">
+                                            <i class="fas fa-image"></i>
+                                        </div>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <strong>{{ variant.product_code }}</strong>
+                                        {% if variant.product_size %}
+                                        <br><small class="text-muted">{{ variant.product_size }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ variant.brand_name }}</td>
+                                    <td>{{ variant.color_name }}</td>
+                                    <td>
+                                        {% if variant.current_stock > 0 %}
+                                        <span class="badge bg-success">{{ variant.current_stock }}</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">Out of Stock</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <small class="font-monospace">{{ variant.barcode_number[:13] if variant.barcode_number|length > 13 else variant.barcode_number }}</small>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ variant.generated_at[:10] if variant.generated_at else 'N/A' }}</small>
+                                    </td>
+                                    <td>
+                                        {% if variant.image_exists %}
+                                            <span class="badge bg-success">
+                                                <i class="fas fa-check-circle"></i> OK
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-danger">
+                                                <i class="fas fa-times-circle"></i> Missing
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-info" onclick="viewBarcode({{ variant.variant_id }})">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        
+                                        {% if not variant.image_exists %}
+                                        <button class="btn btn-sm btn-warning" 
+                                                onclick="regenerateSingle({{ variant.variant_id }}, '{{ variant.product_code }}', '{{ variant.color_name }}')">
+                                            <i class="fas fa-sync"></i>
+                                        </button>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Bulk Actions Footer -->
+                    {% if variants|length > 0 %}
+                    <div class="card-footer">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span id="selectedCount">0</span> selected
+                            </div>
+                            <div>
+                                <button class="btn btn-warning" id="regenerateSelectedBtn" 
+                                        onclick="regenerateSelected()" disabled>
+                                    <i class="fas fa-sync"></i> Regenerate Selected
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endif %}
+            {% else %}
+                <div class="p-4 text-center text-muted">
+                    <i class="fas fa-inbox fa-3x mb-3"></i>
+                    <p>No variants found matching the criteria</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <nav class="mt-3">
+        <ul class="pagination justify-content-center">
+            {% if page > 1 %}
+            <li class="page-item">
+                <a class="page-link" href="?tab={{ tab }}&page={{ page - 1 }}&search={{ search }}&brand={{ brand_filter }}&type={{ type_filter }}&color={{ color_filter }}{% if tab == 'with' %}&image_filter={{ image_filter }}{% endif %}">
+                    Previous
+                </a>
+            </li>
+            {% endif %}
+            
+            <li class="page-item active">
+                <span class="page-link">{{ page }} / {{ total_pages }}</span>
+            </li>
+            
+            {% if has_more %}
+            <li class="page-item">
+                <a class="page-link" href="?tab={{ tab }}&page={{ page + 1 }}&search={{ search }}&brand={{ brand_filter }}&type={{ type_filter }}&color={{ color_filter }}{% if tab == 'with' %}&image_filter={{ image_filter }}{% endif %}">
+                    Next
+                </a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+
+<!-- Barcode View Modal -->
+<div class="modal fade" id="barcodeModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Barcode Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="barcodeModalBody">
+                <!-- Content loaded dynamically -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ==========================================
+// TOAST NOTIFICATION HELPER
+// ==========================================
+
+function showToast(message) {
+    const toastEl = document.getElementById('successToast');
+    const messageEl = document.getElementById('toastMessage');
+    messageEl.innerText = message;
+    
+    const toast = new bootstrap.Toast(toastEl, {
+        delay: 3000
+    });
+    toast.show();
+}
+
+// ==========================================
+// IMAGE FILTER FUNCTIONS
+// ==========================================
+
+function setImageFilter(filter) {
+    const url = new URL(window.location);
+    url.searchParams.set('tab', 'with');
+    url.searchParams.set('image_filter', filter);
+    url.searchParams.set('page', '1');
+    window.location.href = url.toString();
+}
+
+function filterMissingImages() {
+    setImageFilter('missing_image');
+}
+
+// NEW: Toggle missing filter with checkbox
+function toggleMissingFilter(checked) {
+    if (checked) {
+        setImageFilter('missing_image');
+    } else {
+        setImageFilter('all');
+    }
+}
+
+// ==========================================
+// CHECKBOX SELECTION
+// ==========================================
+
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.variant-checkbox');
+    checkboxes.forEach(cb => cb.checked = checkbox.checked);
+    updateSelectedCount();
+}
+
+function updateSelectedCount() {
+    const checked = document.querySelectorAll('.variant-checkbox:checked');
+    const countEl = document.getElementById('selectedCount');
+    if (countEl) {
+        countEl.innerText = checked.length;
+    }
+    
+    const btn = document.getElementById('regenerateSelectedBtn');
+    if (btn) {
+        btn.disabled = checked.length === 0;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const checkboxes = document.querySelectorAll('.variant-checkbox');
+    checkboxes.forEach(cb => {
+        cb.addEventListener('change', updateSelectedCount);
+    });
+});
+
+// ==========================================
+// REGENERATE FUNCTIONS (WITH TOAST)
+// ==========================================
+
+function regenerateSingle(variantId, productCode, colorName) {
+    const btn = event.target.closest('button');
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    btn.disabled = true;
+    
+    fetch(`/barcode/regenerate/${variantId}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast(`Barcode image regenerated for ${productCode} - ${colorName}`);
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            alert('❌ Error: ' + data.error);
+            btn.innerHTML = originalHTML;
+            btn.disabled = false;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('❌ An error occurred!');
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+    });
+}
+
+function regenerateSelected() {
+    const checked = document.querySelectorAll('.variant-checkbox:checked');
+    
+    if (checked.length === 0) {
+        alert('⚠️ Please select at least one item!');
+        return;
+    }
+    
+    if (!confirm(`Regenerate barcode images for ${checked.length} selected item(s)?`)) {
+        return;
+    }
+    
+    const variantIds = Array.from(checked).map(cb => parseInt(cb.value));
+    
+    const btn = document.getElementById('regenerateSelectedBtn');
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Regenerating...';
+    btn.disabled = true;
+    
+    fetch('/barcode/regenerate_bulk', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            variant_ids: variantIds
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast(`Regenerated ${data.success_count} images successfully`);
+            
+            if (data.failed_count > 0) {
+                setTimeout(() => {
+                    let message = `Failed items:\n`;
+                    data.failed_items.forEach(item => {
+                        message += `- ${item}\n`;
+                    });
+                    alert(message);
+                }, 1500);
+            }
+            
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            alert('❌ Error: ' + data.error);
+            btn.innerHTML = originalHTML;
+            btn.disabled = false;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('❌ An error occurred!');
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+    });
+}
+
+function regenerateAllVisible() {
+    const checkboxes = document.querySelectorAll('.variant-checkbox');
+    const variantIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+    
+    if (variantIds.length === 0) {
+        alert('⚠️ No variants found on this page!');
+        return;
+    }
+    
+    if (!confirm(`⚠️ This will regenerate barcode images for all ${variantIds.length} variants on this page.\n\nContinue?`)) {
+        return;
+    }
+    
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = `
+        <div style="background:white;padding:30px;border-radius:10px;text-align:center;">
+            <i class="fas fa-spinner fa-spin fa-3x text-primary mb-3"></i>
+            <h4>Regenerating Images...</h4>
+            <p class="text-muted">Please wait...</p>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    
+    fetch('/barcode/regenerate_bulk', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            variant_ids: variantIds
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        document.body.removeChild(overlay);
+        
+        if (data.success) {
+            showToast(`Regenerated ${data.success_count} images successfully`);
+            
+            if (data.failed_count > 0) {
+                setTimeout(() => {
+                    let message = `Failed items:\n`;
+                    data.failed_items.forEach(item => {
+                        message += `- ${item}\n`;
+                    });
+                    alert(message);
+                }, 1500);
+            }
+            
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            alert('❌ Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        document.body.removeChild(overlay);
+        console.error('Error:', error);
+        alert('❌ An error occurred!');
+    });
+}
+
+// ==========================================
+// ORIGINAL FUNCTIONS (NO CHANGES)
+// ==========================================
+
+function generateBarcode(variantId, productCode, colorName) {
+    if (!confirm(`Generate barcode for ${productCode} - ${colorName}?`)) {
+        return;
+    }
+    
+    fetch(`/barcode/generate/${variantId}`, {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast(data.message);
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            alert('❌ Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('❌ An error occurred!');
+    });
+}
+
+function generateAllBarcodes() {
+    const count = {{ variants|length }};
+    
+    if (!confirm(`⚠️ Generate barcodes for all ${count} variants?\n\nThis may take a few minutes.`)) {
+        return;
+    }
+    
+    const params = new URLSearchParams(window.location.search);
+    
+    fetch('/barcode/generate_all', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            search: params.get('search') || '',
+            brand: params.get('brand') || '',
+            type: params.get('type') || '',
+            color: params.get('color') || ''
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast(`Generated ${data.success_count} barcodes successfully`);
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            alert('❌ Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('❌ An error occurred!');
+    });
+}
+
+function viewBarcode(variantId) {
+    fetch(`/barcode/view/${variantId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const modalBody = document.getElementById('barcodeModalBody');
+                modalBody.innerHTML = `
+                    <div class="text-center">
+                        ${data.barcode_image_url ? `
+                            <div class="card mb-3">
+                                <div class="card-body">
+                                    <img src="${data.barcode_image_url}" class="img-fluid" style="max-width: 100%;">
+                                </div>
+                            </div>
+                        ` : ''}
+                        <div class="card">
+                            <div class="card-body">
+                                <h6>Barcode Number:</h6>
+                                <h3 class="font-monospace">${data.barcode}</h3>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                new bootstrap.Modal(document.getElementById('barcodeModal')).show();
+            } else {
+                alert('❌ ' + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('❌ Failed to load barcode details');
+        });
+}
+
+
+
+// ==========================================
+// STOCK FILTER (WITHOUT BARCODE TAB)
+// ==========================================
+
+function toggleStockFilter(checked) {
+    const stockFilterInput = document.getElementById('stockFilterInput');
+    if (stockFilterInput) {
+        stockFilterInput.value = checked ? 'in_stock' : '';
+    }
+    document.getElementById('filterForm').submit();
+}
+
+// ==========================================
+// CHECKBOX SELECTION (WITHOUT BARCODE TAB)
+// ==========================================
+
+function toggleSelectAllWithout(checkbox) {
+    const checkboxes = document.querySelectorAll('.variant-checkbox-without');
+    checkboxes.forEach(cb => cb.checked = checkbox.checked);
+    updateSelectedCountWithout();
+}
+
+function updateSelectedCountWithout() {
+    const checked = document.querySelectorAll('.variant-checkbox-without:checked');
+    
+    // Update text count
+    const countEl = document.getElementById('selectedCountWithout');
+    if (countEl) {
+        countEl.innerText = checked.length;
+    }
+    
+    // Update badge in button
+    const badgeEl = document.getElementById('selectedCountBadge');
+    if (badgeEl) {
+        badgeEl.innerText = checked.length;
+    }
+    
+    // Enable/disable button
+    const btn = document.getElementById('generateSelectedBtn');
+    if (btn) {
+        btn.disabled = checked.length === 0;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const checkboxesWithout = document.querySelectorAll('.variant-checkbox-without');
+    checkboxesWithout.forEach(cb => {
+        cb.addEventListener('change', updateSelectedCountWithout);
+    });
+});
+
+// ==========================================
+// GENERATE SELECTED BARCODES
+// ==========================================
+
+function generateSelectedBarcodes() {
+    const checked = document.querySelectorAll('.variant-checkbox-without:checked');
+    
+    if (checked.length === 0) {
+        alert('⚠️ Please select at least one item!');
+        return;
+    }
+    
+    if (!confirm(`Generate barcodes for ${checked.length} selected item(s)?`)) {
+        return;
+    }
+    
+    const variantIds = Array.from(checked).map(cb => parseInt(cb.value));
+    
+    const btn = document.getElementById('generateSelectedBtn');
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+    btn.disabled = true;
+    
+    fetch('/barcode/generate_selected', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            variant_ids: variantIds
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast(`Generated ${data.success_count} barcodes successfully`);
+            
+            if (data.failed_count > 0) {
+                setTimeout(() => {
+                    let message = `Failed items:\n`;
+                    data.failed_items.forEach(item => {
+                        message += `- ${item}\n`;
+                    });
+                    alert(message);
+                }, 1500);
+            }
+            
+            setTimeout(() => location.reload(), 2000);
+        } else {
+            alert('❌ Error: ' + data.error);
+            btn.innerHTML = originalHTML;
+            btn.disabled = false;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('❌ An error occurred!');
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+    });
+}
+
+</script>
+{% endblock %}

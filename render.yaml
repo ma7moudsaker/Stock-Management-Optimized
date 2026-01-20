@@ -2,17 +2,12 @@ services:
   - type: web
     name: stock-management
     env: python
-    runtime: python-3.11.9
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --bind :$PORT app:app
+    startCommand: gunicorn app:app
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
       - key: SECRET_KEY
-        value: stock-management-render-key-2025-secure
+        generateValue: true
       - key: FLASK_ENV
         value: production
-      - key: GOOGLE_CREDENTIALS_BASE64
-        value: [base64_encoded_credentials_here]
-      - key: GUNICORN_TIMEOUT
-        value: 300
-      - key: GUNICORN_CMD_ARGS
-        value: "--timeout 300 --workers 2 --worker-class sync"
