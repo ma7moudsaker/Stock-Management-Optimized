@@ -3,7 +3,6 @@ import os
 from urllib.parse import urlparse
 from datetime import datetime
 import requests
-from urllib.parse import urlparse
 import re
 import json
 try:
@@ -73,8 +72,9 @@ class StockDatabase:
             print("✅ Database already contains data")
             conn.close()
             return
-        except:
+        except Exception as e:
             # الجداول غير موجودة، نحتاج إنشاؤها
+            print(f"Database check error: {e}")
             conn.close()
             self.add_default_data()
             print("✅ Default data added to PostgreSQL")
@@ -249,7 +249,8 @@ class StockDatabase:
         try:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_logs_date ON stock_logs(created_date DESC)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_logs_operation ON stock_logs(operation_type)')
-        except:
+        except Exception as e:
+            print(f"Index creation warning: {e}")
             pass
 
                 # === USERS SYSTEM ===
@@ -300,7 +301,8 @@ class StockDatabase:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_active ON users(active)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_permissions_user ON user_permissions(user_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_permissions_page ON user_permissions(page_key)')
-        except:
+        except Exception as e:
+            print(f"Index creation warning: {e}")
             pass
         
         # Activity Logs Table
@@ -344,7 +346,8 @@ class StockDatabase:
         try:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_barcodes_variant ON barcodes(variant_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_barcodes_number ON barcodes(barcode_number)')
-        except:
+        except Exception as e:
+            print(f"Index creation warning: {e}")
             pass
 
         # Barcode Sessions table
@@ -365,10 +368,33 @@ class StockDatabase:
         try:
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_user ON barcode_sessions(user_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_status ON barcode_sessions(status)')
-        except:
+        except Exception as e:
+            print(f"Index creation warning: {e}")
             pass
 
         print("✅ Barcode system tables created!")
+
+        # === STOCK SNAPSHOTS TABLE ===
+        # For dashboard graphs - stores daily snapshots of stock quantity and value
+        cursor.execute(f'''
+            CREATE TABLE IF NOT EXISTS stock_snapshots (
+                id {id_type},
+                snapshot_date DATE NOT NULL UNIQUE,
+                total_quantity INTEGER NOT NULL,
+                total_value DECIMAL(10,2) NOT NULL,
+                created_at {timestamp_type}
+            )
+        ''')
+        
+        # Create index for snapshots
+        try:
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_snapshots_date ON stock_snapshots(snapshot_date DESC)')
+        except Exception as e:
+            print(f"Index creation warning: {e}")
+            pass
+        
+        print("✅ Stock snapshots table created!")
+
 
 
         # Initialize default pages
@@ -962,7 +988,8 @@ class StockDatabase:
                         log['notes'], log['source_page'], log['source_url'],
                         log['created_date']))
                     imported += 1
-                except:
+                except Exception as e:
+                    print(f"Error importing log entry: {e}")
                     continue
             
             conn.commit()
@@ -1043,28 +1070,34 @@ class StockDatabase:
         return brands
     
     def add_brand(self, brand_name):
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        conn = None
         try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
             cursor.execute('INSERT INTO brands (brand_name) VALUES (?)', (brand_name,))
             conn.commit()
-            conn.close()
             return True
-        except:
-            conn.close()
+        except Exception as e:
+            print(f"Error adding brand: {e}")
             return False
+        finally:
+            if conn:
+                conn.close()
     
     def update_brand(self, brand_id, new_name):
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        conn = None
         try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
             cursor.execute('UPDATE brands SET brand_name = ? WHERE id = ?', (new_name, brand_id))
             conn.commit()
-            conn.close()
             return True
-        except:
-            conn.close()
+        except Exception as e:
+            print(f"Error updating brand: {e}")
             return False
+        finally:
+            if conn:
+                conn.close()
     
     def delete_brand(self, brand_id):
         conn = self.get_connection()
@@ -1103,16 +1136,19 @@ class StockDatabase:
         return colors
     
     def add_color(self, color_name, color_code='#FFFFFF'):
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        conn = None
         try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
             cursor.execute('INSERT INTO colors (color_name, color_code) VALUES (?, ?)', (color_name, color_code))
             conn.commit()
-            conn.close()
             return True
-        except:
-            conn.close()
+        except Exception as e:
+            print(f"Error adding color: {e}")
             return False
+        finally:
+            if conn:
+                conn.close()
     
     def update_color(self, color_id, new_name, new_code):
         conn = self.get_connection()
@@ -1173,28 +1209,34 @@ class StockDatabase:
         return types
     
     def add_product_type(self, type_name):
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        conn = None
         try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
             cursor.execute('INSERT INTO product_types (type_name) VALUES (?)', (type_name,))
             conn.commit()
-            conn.close()
             return True
-        except:
-            conn.close()
+        except Exception as e:
+            print(f"Error adding product type: {e}")
             return False
+        finally:
+            if conn:
+                conn.close()
     
     def update_product_type(self, type_id, new_name):
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        conn = None
         try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
             cursor.execute('UPDATE product_types SET type_name = ? WHERE id = ?', (new_name, type_id))
             conn.commit()
-            conn.close()
             return True
-        except:
-            conn.close()
+        except Exception as e:
+            print(f"Error updating product type: {e}")
             return False
+        finally:
+            if conn:
+                conn.close()
     
     def delete_product_type(self, type_id):
         conn = self.get_connection()
@@ -1233,17 +1275,20 @@ class StockDatabase:
         return categories
 
     def add_trader_category(self, category_code, category_name, description=''):
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        conn = None
         try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
             cursor.execute('INSERT INTO trader_categories (category_code, category_name, description) VALUES (?, ?, ?)',
                            (category_code, category_name, description))
             conn.commit()
-            conn.close()
             return True
-        except:
-            conn.close()
+        except Exception as e:
+            print(f"Error adding trader category: {e}")
             return False
+        finally:
+            if conn:
+                conn.close()
 
     def update_trader_category(self, category_id, new_code, new_name, new_description):
         conn = self.get_connection()
@@ -1306,17 +1351,20 @@ class StockDatabase:
         return tags
     
     def add_tag(self, tag_name, tag_category='general', tag_color='#6c757d', description=''):
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        conn = None
         try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
             cursor.execute('INSERT INTO tags (tag_name, tag_category, tag_color, description) VALUES (?, ?, ?, ?)',
                            (tag_name, tag_category, tag_color, description))
             conn.commit()
-            conn.close()
             return True
-        except:
-            conn.close()
+        except Exception as e:
+            print(f"Error adding tag: {e}")
             return False
+        finally:
+            if conn:
+                conn.close()
     
     def update_tag(self, tag_id, new_name, new_category, new_color, new_description):
         conn = self.get_connection()
@@ -2649,7 +2697,8 @@ class StockDatabase:
                     ci.image_url,            -- 10: product_image_url
                     bp.wholesale_price,      -- 11: wholesale_price
                     bp.retail_price,         -- 12: retail_price
-                    bp.product_size          -- 13: product_size
+                    bp.product_size,         -- 13: product_size
+                    bp.id                    -- 14: product_id (Needed for edit link)
                 FROM barcodes b
                 JOIN product_variants pv ON b.variant_id = pv.id
                 JOIN base_products bp ON pv.base_product_id = bp.id
@@ -3622,8 +3671,202 @@ class StockDatabase:
                 conn.close()
             return False
 
+    # === STOCK SNAPSHOTS FUNCTIONS ===
+    
+    def create_daily_snapshot(self):
+        """Create or update today's stock snapshot"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            today = datetime.now().date().strftime('%Y-%m-%d')
+            
+            # Get current totals
+            total_qty = self.get_total_stock_quantity()
+            total_value = self.get_total_stock_value()
+            
+            # Insert or replace today's snapshot
+            cursor.execute('''
+                INSERT OR REPLACE INTO stock_snapshots 
+                (snapshot_date, total_quantity, total_value)
+                VALUES (?, ?, ?)
+            ''', (today, total_qty, total_value))
+            
+            conn.commit()
+            conn.close()
+            
+            print(f"✅ Snapshot created for {today}: Qty={total_qty}, Value={total_value:.2f}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error creating snapshot: {e}")
+            if 'conn' in locals():
+                conn.close()
+            return False
+    
+    def get_stock_quantity_trend(self, days=30):
+        """
+        Get stock quantity trend for specified period
+        
+        Args:
+            days: Number of days (7/30/60/90/180/360) or 'lifetime'
+        
+        Returns:
+            dict with dates, quantities, missing_dates, has_data
+        """
+        try:
+            from datetime import timedelta
+            
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # Handle lifetime option
+            if days == 'lifetime':
+                cursor.execute('''
+                    SELECT snapshot_date, total_quantity
+                    FROM stock_snapshots
+                    ORDER BY snapshot_date ASC
+                ''')
+            else:
+                cursor.execute('''
+                    SELECT snapshot_date, total_quantity
+                    FROM stock_snapshots
+                    WHERE snapshot_date >= DATE('now', '-' || ? || ' days')
+                    ORDER BY snapshot_date ASC
+                ''', (days,))
+            
+            snapshots = {row[0]: row[1] for row in cursor.fetchall()}
+            conn.close()
+            
+            # Generate date range
+            today = datetime.now().date()
+            
+            if days == 'lifetime' and snapshots:
+                # Get first snapshot date
+                first_date = min(snapshots.keys())
+                first_date_obj = datetime.strptime(first_date, '%Y-%m-%d').date()
+                days_count = (today - first_date_obj).days + 1
+                all_dates = []
+                for i in range(days_count):
+                    date = (first_date_obj + timedelta(days=i)).strftime('%Y-%m-%d')
+                    all_dates.append(date)
+            else:
+                all_dates = []
+                for i in range(days-1, -1, -1):
+                    date = (today - timedelta(days=i)).strftime('%Y-%m-%d')
+                    all_dates.append(date)
+            
+            # Build data arrays
+            dates = []
+            quantities = []
+            missing_dates = []
+            
+            for date in all_dates:
+                dates.append(date)
+                if date in snapshots:
+                    quantities.append(snapshots[date])
+                else:
+                    quantities.append(None)
+                    missing_dates.append(date)
+            
+            return {
+                'dates': dates,
+                'quantities': quantities,
+                'missing_dates': missing_dates,
+                'has_data': len(snapshots) > 0
+            }
+            
+        except Exception as e:
+            print(f"Error getting stock quantity trend: {e}")
+            return {
+                'dates': [],
+                'quantities': [],
+                'missing_dates': [],
+                'has_data': False
+            }
+    
+    def get_stock_value_trend(self, days=30):
+        """
+        Get stock value trend for specified period
+        
+        Args:
+            days: Number of days (7/30/60/90/180/360) or 'lifetime'
+        
+        Returns:
+            dict with dates, values, missing_dates, has_data
+        """
+        try:
+            from datetime import timedelta
+            
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            # Handle lifetime option
+            if days == 'lifetime':
+                cursor.execute('''
+                    SELECT snapshot_date, total_value
+                    FROM stock_snapshots
+                    ORDER BY snapshot_date ASC
+                ''')
+            else:
+                cursor.execute('''
+                    SELECT snapshot_date, total_value
+                    FROM stock_snapshots
+                    WHERE snapshot_date >= DATE('now', '-' || ? || ' days')
+                    ORDER BY snapshot_date ASC
+                ''', (days,))
+            
+            snapshots = {row[0]: row[1] for row in cursor.fetchall()}
+            conn.close()
+            
+            # Generate date range
+            today = datetime.now().date()
+            
+            if days == 'lifetime' and snapshots:
+                # Get first snapshot date
+                first_date = min(snapshots.keys())
+                first_date_obj = datetime.strptime(first_date, '%Y-%m-%d').date()
+                days_count = (today - first_date_obj).days + 1
+                all_dates = []
+                for i in range(days_count):
+                    date = (first_date_obj + timedelta(days=i)).strftime('%Y-%m-%d')
+                    all_dates.append(date)
+            else:
+                all_dates = []
+                for i in range(days-1, -1, -1):
+                    date = (today - timedelta(days=i)).strftime('%Y-%m-%d')
+                    all_dates.append(date)
+            
+            # Build data arrays
+            dates = []
+            values = []
+            missing_dates = []
+            
+            for date in all_dates:
+                dates.append(date)
+                if date in snapshots:
+                    values.append(round(float(snapshots[date]), 2))
+                else:
+                    values.append(None)
+                    missing_dates.append(date)
+            
+            return {
+                'dates': dates,
+                'values': values,
+                'missing_dates': missing_dates,
+                'has_data': len(snapshots) > 0
+            }
+            
+        except Exception as e:
+            print(f"Error getting stock value trend: {e}")
+            return {
+                'dates': [],
+                'values': [],
+                'missing_dates': [],
+                'has_data': False
+            }
 
-# اختبار قاعدة البيانات المحدثة
+
 if __name__ == "__main__":
     db = StockDatabase()
     db.add_default_data()

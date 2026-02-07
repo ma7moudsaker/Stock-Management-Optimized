@@ -127,7 +127,7 @@ class BarcodeGenerator:
             str: Path to saved image or None on error
         """
         if not BARCODE_AVAILABLE or not PIL_AVAILABLE:
-            print("❌ Required libraries not available")
+            print("Required libraries not available")
             return None
         
         try:
@@ -139,7 +139,7 @@ class BarcodeGenerator:
             
             # Check if file already exists
             if os.path.exists(filepath):
-                print(f"ℹ️ Barcode image already exists: {filename}")
+                print(f"Barcode image already exists: {filename}")
                 return filepath
             
             # Create barcode image using python-barcode
@@ -162,7 +162,7 @@ class BarcodeGenerator:
             # Add product code and color labels using Pillow
             self._add_labels_to_image(filepath, product_code, color_name)
             
-            print(f"✅ Barcode image created: {filename}")
+            print(f"Barcode image created: {filename}")
             return filepath
             
         except Exception as e:
@@ -193,7 +193,7 @@ class BarcodeGenerator:
                 # ✅ كبّر الخط - كان 14
                 font_large = ImageFont.truetype("arial.ttf", 32)      # ← للكود
                 font_medium = ImageFont.truetype("arial.ttf", 28)     # ← للون
-            except:
+            except (IOError, OSError):
                 font_large = ImageFont.load_default()
                 font_medium = ImageFont.load_default()
             
@@ -316,11 +316,11 @@ class BarcodePrinter:
             
             c.save()
             
-            print(f"✅ PDF created: {output_path} ({total_labels} labels)")
+            print(f"PDF created: {output_path} ({total_labels} labels)")
             return output_path
             
         except Exception as e:
-            print(f"❌ Error creating PDF: {e}")
+            print(f"Error creating PDF: {e}")
             return None
     
     def _draw_label(self, canvas_obj, label_data):
@@ -346,7 +346,7 @@ class BarcodePrinter:
                 try:
                     img = ImageReader(barcode_image)
                     
-                    # ✅ Make image LARGE - takes up almost entire label
+                    # Make image LARGE - takes up almost entire label
                     img_width = width * 0.95   # 95% of page width
                     img_height = height * 0.95  # 95% of page height
                     
@@ -363,13 +363,13 @@ class BarcodePrinter:
                     )
                     
                 except Exception as e:
-                    print(f"⚠️ Could not draw barcode image: {e}")
+                    print(f"Could not draw barcode image: {e}")
             
-            # ❌ NO TEXT - Just the barcode image!
+            # NO TEXT - Just the barcode image!
             # All text labels removed to avoid duplication
             
         except Exception as e:
-            print(f"❌ Error drawing label: {e}")
+            print(f"Error drawing label: {e}")
 
 
 # Helper functions for easy access

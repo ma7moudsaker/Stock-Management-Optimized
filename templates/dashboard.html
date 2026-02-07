@@ -7,16 +7,16 @@
     .stats-card {
         border-radius: 15px;
         border: none;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         transition: transform 0.3s ease, box-shadow 0.3s ease;
         overflow: hidden;
     }
-    
+
     .stats-card:hover {
         transform: translateY(-5px);
-        box-shadow: 0 8px 15px rgba(0,0,0,0.2);
+        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
     }
-    
+
     .icon-box {
         width: 60px;
         height: 60px;
@@ -27,17 +27,25 @@
         font-size: 1.8rem;
         margin-bottom: 1rem;
     }
-    
-    .gradient-bg-1 { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-    .gradient-bg-2 { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
-    .gradient-bg-3 { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
-    
+
+    .gradient-bg-1 {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .gradient-bg-2 {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    }
+
+    .gradient-bg-3 {
+        background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+    }
+
     .chart-container {
         position: relative;
         height: 300px;
         margin-bottom: 2rem;
     }
-    
+
     .table-container {
         max-height: 400px;
         overflow-y: auto;
@@ -66,7 +74,7 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="col-md-{{ '4' if is_admin else '6' }} mb-3">
             <div class="card stats-card gradient-bg-2 text-white">
                 <div class="card-body text-center">
@@ -78,7 +86,7 @@
                 </div>
             </div>
         </div>
-        
+
         {% if is_admin %}
         <div class="col-md-4 mb-3">
             <div class="card stats-card gradient-bg-3 text-white">
@@ -98,13 +106,32 @@
     <div class="row">
         <!-- Left Column (Charts & Table) -->
         <div class="col-md-8">
-            
+
             <!-- Stock Quantity Trend -->
             <div class="card mb-4">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0"><i class="fas fa-chart-line"></i> Stock Quantity Trend (Last 30 Days)</h5>
+                <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap">
+                    <h5 class="mb-0 me-3"><i class="fas fa-chart-line"></i> Stock Quantity Trend</h5>
+
+                    <!-- Duration Selector -->
+                    <div class="btn-group btn-group-sm" role="group" id="qtyDurationSelector">
+                        <button type="button" class="btn btn-outline-primary"
+                            onclick="updateChart('quantity', 7)">7D</button>
+                        <button type="button" class="btn btn-outline-primary active"
+                            onclick="updateChart('quantity', 30)">30D</button>
+                        <button type="button" class="btn btn-outline-primary"
+                            onclick="updateChart('quantity', 60)">60D</button>
+                        <button type="button" class="btn btn-outline-primary"
+                            onclick="updateChart('quantity', 90)">90D</button>
+                        <button type="button" class="btn btn-outline-primary"
+                            onclick="updateChart('quantity', 180)">6M</button>
+                        <button type="button" class="btn btn-outline-primary"
+                            onclick="updateChart('quantity', 360)">1Y</button>
+                        <button type="button" class="btn btn-outline-primary"
+                            onclick="updateChart('quantity', 'lifetime')">All</button>
+                    </div>
                 </div>
                 <div class="card-body">
+                    <div id="qtyWarning"></div>
                     <div class="chart-container">
                         <canvas id="stockQuantityChart"></canvas>
                     </div>
@@ -114,10 +141,29 @@
             <!-- Stock Value Trend (Admins Only) -->
             {% if is_admin %}
             <div class="card mb-4">
-                <div class="card-header bg-white">
-                    <h5 class="mb-0"><i class="fas fa-chart-area"></i> Stock Value Trend (Last 30 Days)</h5>
+                <div class="card-header bg-white d-flex justify-content-between align-items-center flex-wrap">
+                    <h5 class="mb-0 me-3"><i class="fas fa-chart-area"></i> Stock Value Trend</h5>
+
+                    <!-- Duration Selector -->
+                    <div class="btn-group btn-group-sm" role="group" id="valueDurationSelector">
+                        <button type="button" class="btn btn-outline-success"
+                            onclick="updateChart('value', 7)">7D</button>
+                        <button type="button" class="btn btn-outline-success active"
+                            onclick="updateChart('value', 30)">30D</button>
+                        <button type="button" class="btn btn-outline-success"
+                            onclick="updateChart('value', 60)">60D</button>
+                        <button type="button" class="btn btn-outline-success"
+                            onclick="updateChart('value', 90)">90D</button>
+                        <button type="button" class="btn btn-outline-success"
+                            onclick="updateChart('value', 180)">6M</button>
+                        <button type="button" class="btn btn-outline-success"
+                            onclick="updateChart('value', 360)">1Y</button>
+                        <button type="button" class="btn btn-outline-success"
+                            onclick="updateChart('value', 'lifetime')">All</button>
+                    </div>
                 </div>
                 <div class="card-body">
+                    <div id="valueWarning"></div>
                     <div class="chart-container">
                         <canvas id="stockValueChart"></canvas>
                     </div>
@@ -145,29 +191,29 @@
                             </thead>
                             <tbody>
                                 {% if most_updated %}
-                                    {% for product in most_updated %}
-                                    <tr>
-                                        <td><strong>{{ product[0] }}</strong></td>
-                                        <td>{{ product[1] }}</td>
-                                        <td>{{ product[2] }}</td>
-                                        <td class="text-center">
-                                            <span class="badge bg-success">+{{ product[3] }}</span>
-                                        </td>
-                                        <td class="text-center">
-                                            <span class="badge bg-danger">-{{ product[4] }}</span>
-                                        </td>
-                                        <td>
-                                            <small class="text-muted">{{ product[5][:16] }}</small>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
+                                {% for product in most_updated %}
+                                <tr>
+                                    <td><strong>{{ product[0] }}</strong></td>
+                                    <td>{{ product[1] }}</td>
+                                    <td>{{ product[2] }}</td>
+                                    <td class="text-center">
+                                        <span class="badge bg-success">+{{ product[3] }}</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-danger">-{{ product[4] }}</span>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ product[5][:16] }}</small>
+                                    </td>
+                                </tr>
+                                {% endfor %}
                                 {% else %}
-                                    <tr>
-                                        <td colspan="6" class="text-center text-muted py-4">
-                                            <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
-                                            No stock updates in the last 30 days
-                                        </td>
-                                    </tr>
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted py-4">
+                                        <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                                        No stock updates in the last 30 days
+                                    </td>
+                                </tr>
                                 {% endif %}
                             </tbody>
                         </table>
@@ -179,7 +225,7 @@
 
         <!-- Right Column (Sidebar) -->
         <div class="col-md-4">
-            
+
             <!-- Top Brands -->
             <div class="card mb-4">
                 <div class="card-header bg-white">
@@ -187,21 +233,21 @@
                 </div>
                 <div class="card-body">
                     {% if top_brands %}
-                        {% for brand in top_brands %}
-                        <div class="mb-3">
-                            <div class="d-flex justify-content-between mb-1">
-                                <strong>{{ brand[0] }}</strong>
-                                <span class="badge bg-primary">{{ brand[1] }}</span>
-                            </div>
-                            <div class="progress" style="height: 8px;">
-                                <div class="progress-bar bg-primary" 
-                                     style="width: {{ (brand[1] / top_brands[0][1] * 100)|round }}%">
-                                </div>
+                    {% for brand in top_brands %}
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <strong>{{ brand[0] }}</strong>
+                            <span class="badge bg-primary">{{ brand[1] }}</span>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            <div class="progress-bar bg-primary"
+                                style="width: {{ (brand[1] / top_brands[0][1] * 100)|round }}%">
                             </div>
                         </div>
-                        {% endfor %}
+                    </div>
+                    {% endfor %}
                     {% else %}
-                        <p class="text-muted text-center mb-0">No data available</p>
+                    <p class="text-muted text-center mb-0">No data available</p>
                     {% endif %}
                 </div>
             </div>
@@ -213,26 +259,26 @@
                 </div>
                 <div class="card-body" style="max-height: 450px; overflow-y: auto;">
                     {% if top_products_stock %}
-                        {% for product in top_products_stock %}
-                        <div class="mb-3 pb-2 {% if not loop.last %}border-bottom{% endif %}">
-                            <div class="d-flex justify-content-between align-items-start mb-1">
-                                <div style="flex: 1; min-width: 0;">
-                                    <strong class="text-truncate d-block">{{ product[0] }}</strong>
-                                    <small class="text-muted">{{ product[1] }}</small>
-                                </div>
-                                <span class="badge bg-success ms-2" style="font-size: 0.85rem;">
-                                    {{ product[4] }}
-                                </span>
+                    {% for product in top_products_stock %}
+                    <div class="mb-3 pb-2 {% if not loop.last %}border-bottom{% endif %}">
+                        <div class="d-flex justify-content-between align-items-start mb-1">
+                            <div style="flex: 1; min-width: 0;">
+                                <strong class="text-truncate d-block">{{ product[0] }}</strong>
+                                <small class="text-muted">{{ product[1] }}</small>
                             </div>
-                            <div class="progress" style="height: 6px;">
-                                <div class="progress-bar bg-success" 
-                                     style="width: {{ (product[4] / top_products_stock[0][4] * 100)|round }}%">
-                                </div>
+                            <span class="badge bg-success ms-2" style="font-size: 0.85rem;">
+                                {{ product[4] }}
+                            </span>
+                        </div>
+                        <div class="progress" style="height: 6px;">
+                            <div class="progress-bar bg-success"
+                                style="width: {{ (product[4] / top_products_stock[0][4] * 100)|round }}%">
                             </div>
                         </div>
-                        {% endfor %}
+                    </div>
+                    {% endfor %}
                     {% else %}
-                        <p class="text-muted text-center mb-0">No data available</p>
+                    <p class="text-muted text-center mb-0">No data available</p>
                     {% endif %}
                 </div>
             </div>
@@ -285,73 +331,168 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <script>
-    // Stock Quantity Chart
-    const qtyCtx = document.getElementById('stockQuantityChart');
-    if (qtyCtx) {
-        const qtyData = {{ stock_qty_trend|tojson|safe }};
-        
-        new Chart(qtyCtx, {
+    // Chart instances
+    let qtyChart = null;
+    let valueChart = null;
+
+    // Initialize charts on page load
+    document.addEventListener('DOMContentLoaded', function () {
+        loadChart('quantity', 30);
+        {% if is_admin %}
+        loadChart('value', 30);
+        {% endif %}
+
+        // Initialize category pie chart (static)
+        initCategoryChart();
+    });
+
+    // Update chart when duration button is clicked
+    function updateChart(type, duration) {
+        // Update button states
+        const selectorId = type === 'quantity' ? 'qtyDurationSelector' : 'valueDurationSelector';
+        const btnGroup = document.getElementById(selectorId);
+        btnGroup.querySelectorAll('button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        event.target.classList.add('active');
+
+        // Load new data
+        loadChart(type, duration);
+    }
+
+    // Load chart data from API
+    function loadChart(type, duration) {
+        fetch(`/api/stock-trend?duration=${duration}`)
+            .then(r => r.json())
+            .then(data => {
+                if (type === 'quantity') {
+                    updateQuantityChart(data.quantity);
+                } else if (type === 'value' && data.value) {
+                    updateValueChart(data.value);
+                }
+            })
+            .catch(err => {
+                console.error('Error loading chart:', err);
+            });
+    }
+
+    // Update quantity chart
+    function updateQuantityChart(data) {
+        const ctx = document.getElementById('stockQuantityChart');
+        const warningDiv = document.getElementById('qtyWarning');
+
+        // Clear previous warnings
+        warningDiv.innerHTML = '';
+
+        // Show warning for missing dates
+        if (data.missing_dates && data.missing_dates.length > 0) {
+            warningDiv.innerHTML = `
+                <div class="alert alert-warning alert-dismissible fade show">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Missing Data:</strong> No snapshots for ${data.missing_dates.length} day(s).
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+        }
+
+        // Show message if no data
+        if (!data.has_data) {
+            ctx.parentElement.innerHTML = `
+                <div class="alert alert-info text-center">
+                    <i class="fas fa-info-circle fa-2x mb-2"></i>
+                    <p class="mb-0">No snapshot data available yet. Snapshots will be created daily.</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Destroy existing chart
+        if (qtyChart) {
+            qtyChart.destroy();
+        }
+
+        // Create new chart
+        qtyChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: qtyData.dates || [],
+                labels: data.dates,
                 datasets: [{
                     label: 'Stock Quantity',
-                    data: qtyData.quantities || [],
+                    data: data.quantities,
                     borderColor: 'rgb(79, 172, 254)',
                     backgroundColor: 'rgba(79, 172, 254, 0.1)',
                     tension: 0.4,
-                    fill: true
+                    fill: true,
+                    spanGaps: false
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: {
-                        display: false
-                    }
+                    legend: { display: false }
                 },
                 scales: {
-                    y: {
-                        beginAtZero: true
-                    }
+                    y: { beginAtZero: true }
                 }
             }
         });
     }
 
-    {% if is_admin %}
-    // Stock Value Chart (Admin only)
-    const valueCtx = document.getElementById('stockValueChart');
-    if (valueCtx) {
-        const valueData = {{ stock_value_trend|tojson|safe }};
-        
-        new Chart(valueCtx, {
+    // Update value chart
+    function updateValueChart(data) {
+        const ctx = document.getElementById('stockValueChart');
+        const warningDiv = document.getElementById('valueWarning');
+
+        warningDiv.innerHTML = '';
+
+        if (data.missing_dates && data.missing_dates.length > 0) {
+            warningDiv.innerHTML = `
+                <div class="alert alert-warning alert-dismissible fade show">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Missing Data:</strong> No snapshots for ${data.missing_dates.length} day(s).
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+        }
+
+        if (!data.has_data) {
+            ctx.parentElement.innerHTML = `
+                <div class="alert alert-info text-center">
+                    <i class="fas fa-info-circle fa-2x mb-2"></i>
+                    <p class="mb-0">No snapshot data available yet.</p>
+                </div>
+            `;
+            return;
+        }
+
+        if (valueChart) {
+            valueChart.destroy();
+        }
+
+        valueChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: valueData.dates || [],
+                labels: data.dates,
                 datasets: [{
                     label: 'Stock Value (EGP)',
-                    data: valueData.values || [],
+                    data: data.values,
                     borderColor: 'rgb(67, 233, 123)',
                     backgroundColor: 'rgba(67, 233, 123, 0.1)',
                     tension: 0.4,
-                    fill: true
+                    fill: true,
+                    spanGaps: false
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    }
-                },
+                plugins: { legend: { display: false } },
                 scales: {
                     y: {
                         beginAtZero: true,
                         ticks: {
-                            callback: function(value) {
+                            callback: function (value) {
                                 return value.toLocaleString() + ' EGP';
                             }
                         }
@@ -360,48 +501,49 @@
             }
         });
     }
-    {% endif %}
 
-    // Category Pie Chart
-    const pieCtx = document.getElementById('categoryPieChart');
-    if (pieCtx) {
-        const categoryData = {{ products_by_category|tojson|safe }};
-        
-        if (categoryData && categoryData.length > 0) {
-            new Chart(pieCtx, {
-                type: 'pie',
-                data: {
-                    labels: categoryData.map(item => item[0]),
-                    datasets: [{
-                        data: categoryData.map(item => item[1]),
-                        backgroundColor: [
-                            'rgba(102, 126, 234, 0.8)',
-                            'rgba(237, 100, 166, 0.8)',
-                            'rgba(255, 159, 64, 0.8)',
-                            'rgba(75, 192, 192, 0.8)',
-                            'rgba(153, 102, 255, 0.8)'
-                        ]
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom'
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                    const percentage = ((context.parsed / total) * 100).toFixed(1);
-                                    return context.label + ': ' + context.parsed + ' (' + percentage + '%)';
-                                }
+    // Initialize category pie chart (static)
+    function initCategoryChart() {
+        const pieCtx = document.getElementById('categoryPieChart');
+        if (pieCtx) {
+            const categoryData = {{ products_by_category| tojson | safe}};
+
+    if (categoryData && categoryData.length > 0) {
+        new Chart(pieCtx, {
+            type: 'pie',
+            data: {
+                labels: categoryData.map(item => item[0]),
+                datasets: [{
+                    data: categoryData.map(item => item[1]),
+                    backgroundColor: [
+                        'rgba(102, 126, 234, 0.8)',
+                        'rgba(237, 100, 166, 0.8)',
+                        'rgba(255, 159, 64, 0.8)',
+                        'rgba(75, 192, 192, 0.8)',
+                        'rgba(153, 102, 255, 0.8)'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                return context.label + ': ' + context.parsed + ' (' + percentage + '%)';
                             }
                         }
                     }
                 }
-            });
+            }
+        });
+    }
         }
     }
 </script>

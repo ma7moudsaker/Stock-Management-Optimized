@@ -1,4 +1,13 @@
+# -*- coding: utf-8 -*-
 import os
+import sys
+
+# Fix encoding for Windows console
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, session
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -14,6 +23,7 @@ from openpyxl.utils.exceptions import InvalidFileException
 import atexit
 import threading
 import time
+import dropbox
 from dropbox_oauth_backup import DropboxOAuthBackup
 # أضف هذا مع الـ imports في الأعلى
 from barcode_utils import (
@@ -101,32 +111,39 @@ def inject_user_data():
     user_id = session.get('user_id', 0)
     
     if user_id:
-        # Temporary: Give all permissions for testing
-        user_permissions = {
-            'dashboard': True,
-            'products_new': True,
-            'add_product_new': True,
-            'add_products_multi': True,
-            'barcode_system': True,
-            'inventory_management': True,
-            'bulk_upload_excel': True,
-            'export_products': True,
-            'manage_brands': True,
-            'manage_colors': True,
-            'manage_product_types': True,
-            'manage_tags': True,
-            'manage_trader_categories': True,
-            'user_management': True,
-            'logs': True,
-            'backup_system': True
-        }
+        # Super Admin (ID = 0) has all permissions
+        if user_id == 0:
+            user_permissions = {
+                'dashboard': True,
+                'products_new': True,
+                'add_product_new': True,
+                'add_products_multi': True,
+                'barcode_system': True,
+                'inventory_management': True,
+                'bulk_upload_excel': True,
+                'export_products': True,
+                'manage_brands': True,
+                'manage_colors': True,
+                'manage_product_types': True,
+                'manage_tags': True,
+                'manage_trader_categories': True,
+                'user_management': True,
+                'logs': True,
+                'backup_system': True
+            }
+            is_super_admin = True
+        else:
+            # Get real permissions from database for regular users
+            permissions_list = db.get_user_permissions(user_id)
+            user_permissions = {perm: True for perm in permissions_list}
+            is_super_admin = False
         
         return {
             'user_permissions': user_permissions,
             'user_id': user_id,
             'username': session.get('username', ''),
             'full_name': session.get('full_name', ''),
-            'is_super_admin': True
+            'is_super_admin': is_super_admin
         }
     
     return {
@@ -277,12 +294,19 @@ if not os.getenv('DATABASE_URL'):
 # إنشاء نظام النسخ الاحتياطية
 backup_system = DropboxOAuthBackup()
 
-# متغير للتأكد من تشغيل الكود مرة واحدة فقط
+# متغير للتأكد من تشغيل الكود مرة واحدة فقط (Thread-safe)
+startup_lock = threading.Lock()
 startup_completed = False
+
 @app.before_request
 def restore_on_startup():
     global startup_completed
-    if not startup_completed:
+    
+    # Thread-safe check
+    with startup_lock:
+        if startup_completed:
+            return
+        
         try:
             # === Restore Database ===
             conn = db.get_connection()
@@ -385,6 +409,39 @@ logs_backup_thread = threading.Thread(target=daily_logs_backup, daemon=True)
 logs_backup_thread.start()
 print("✅ Logs backup system started")
 
+# === DAILY SNAPSHOTS SYSTEM ===
+def daily_snapshots():
+    """Create stock snapshots every 24 hours at midnight"""
+    import time
+    from datetime import datetime
+    
+    # Wait until midnight on first run
+    now = datetime.now()
+    seconds_until_midnight = ((24 - now.hour - 1) * 3600 + 
+                              (60 - now.minute - 1) * 60 + 
+                              (60 - now.second))
+    
+    if seconds_until_midnight > 0:
+        print(f"⏰ First snapshot will be created at midnight ({seconds_until_midnight//3600}h {(seconds_until_midnight%3600)//60}m)")
+        time.sleep(seconds_until_midnight)
+    
+    # Create snapshot immediately on first midnight
+    db.create_daily_snapshot()
+    
+    # Then create snapshot every 24 hours
+    while True:
+        time.sleep(86400)  # 24 hours
+        try:
+            print("🔄 Creating daily snapshot...")
+            db.create_daily_snapshot()
+        except Exception as e:
+            print(f"❌ Error creating snapshot: {e}")
+
+# Start daily snapshots thread
+snapshots_thread = threading.Thread(target=daily_snapshots, daemon=True)
+snapshots_thread.start()
+print("✅ Daily snapshots system started")
+
 
 # بدء النسخ الاحتياطية التلقائية
 backup_thread = threading.Thread(target=auto_backup)
@@ -454,17 +511,19 @@ def login():
         password = request.form.get('password', '')
         
         # 1️⃣ Check Super Admin
-        SUPER_ADMIN_USERNAME = os.environ.get('SUPER_ADMIN_USERNAME', 'admin')
-        SUPER_ADMIN_PASSWORD = os.environ.get('SUPER_ADMIN_PASSWORD', 'admin123456')
+        SUPER_ADMIN_USERNAME = os.environ.get('SUPER_ADMIN_USERNAME','admin')
+        SUPER_ADMIN_PASSWORD = os.environ.get('SUPER_ADMIN_PASSWORD','admin')
         
-        if username == SUPER_ADMIN_USERNAME and password == SUPER_ADMIN_PASSWORD:
-            session['logged_in'] = True
-            session['user_id'] = 0
-            session['username'] = username
-            session['full_name'] = 'Super Admin'
-            session['role'] = 'Super Admin'
-            flash('Welcome Super Admin! 👑', 'success')
-            return redirect(url_for('dashboard'))
+        # Super Admin login (only if credentials are set in environment)
+        if SUPER_ADMIN_USERNAME and SUPER_ADMIN_PASSWORD:
+            if username == SUPER_ADMIN_USERNAME and password == SUPER_ADMIN_PASSWORD:
+                session['logged_in'] = True
+                session['user_id'] = 0
+                session['username'] = username
+                session['full_name'] = 'Super Admin'
+                session['role'] = 'Super Admin'
+                flash('Welcome Super Admin! 👑', 'success')
+                return redirect(url_for('dashboard'))
         
         # 2️⃣ Check Database Users
         user = db.get_user_by_username(username)
@@ -684,7 +743,42 @@ def dashboard():
                          products_by_category=products_by_category,
                          system_counts=system_counts)
 
-# صفحات إدارة البراندات
+# API endpoint for dynamic chart loading
+@app.route('/api/stock-trend')
+@login_required
+def get_stock_trend_api():
+    """Get stock trend data for specified duration"""
+    duration = request.args.get('duration', '30')
+    
+    # Convert to int or keep as 'lifetime'
+    if duration != 'lifetime':
+        try:
+            duration = int(duration)
+        except:
+            duration = 30
+    
+    qty_trend = db.get_stock_quantity_trend(days=duration)
+    
+    # Get value trend if admin
+    value_trend = None
+    user_id = session.get('user_id')
+    is_admin = False
+    
+    if user_id == 0:  # Super Admin
+        is_admin = True
+    elif user_id:
+        user_permissions = db.get_user_permissions(user_id)
+        if 'user_management' in user_permissions:
+            is_admin = True
+    
+    if is_admin:
+        value_trend = db.get_stock_value_trend(days=duration)
+    
+    return jsonify({
+        'quantity': qty_trend,
+        'value': value_trend
+    })
+
 @app.route('/manage_brands')
 @page_permission_required('manage_brands')
 def manage_brands():
@@ -3076,18 +3170,18 @@ def print_barcodes():
                         logged_count += 1
                 
                 except Exception as e:
-                    print(f"❌ Error logging barcode print for variant {variant_id}: {e}")
+                    print(f"Error logging barcode print for variant {variant_id}: {e}")
                     continue
             
             conn.close()
-            print(f"✅ Logged {logged_count} barcode print operations")
+            print(f"Logged {logged_count} barcode print operations")
             
         except Exception as e:
-            print(f"❌ Error in barcode print logging: {e}")
+            print(f"Error in barcode print logging: {e}")
             if conn:
                 conn.close()
         
-        # Calculate total labels (بعد الـ Logging)
+        # Calculate total labels (logging after)
         total_labels = sum(item['quantity'] for item in labels_data)
         
         return jsonify({
@@ -3100,7 +3194,7 @@ def print_barcodes():
 
         
     except Exception as e:
-        print(f"❌ Error printing barcodes: {e}")
+        print(f"Error printing barcodes: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -3154,6 +3248,8 @@ def barcode_lookup(barcode):
             'color_name': barcode_data[8],
             'color_code': barcode_data[9],
             'current_stock': barcode_data[4],
+            'product_id': barcode_data[14] if len(barcode_data) > 14 else None,  # ✅ New field
+
             'wholesale_price': barcode_data[11],
             'retail_price': barcode_data[12],
             'product_size': barcode_data[13],
@@ -3350,8 +3446,11 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_ENV') != 'production'
     
-    print(f"🚀 Starting on Render...")
+    print(f"🚀 Starting Flask Server...")
     print(f"📊 Port: {port}")
     print(f"🔧 Debug: {debug}")
     
     app.run(debug=debug, host='0.0.0.0', port=port)
+
+
+

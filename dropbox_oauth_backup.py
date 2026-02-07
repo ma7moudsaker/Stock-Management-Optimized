@@ -93,8 +93,8 @@ class DropboxOAuthBackup:
                             print("💡 الـ Refresh Token منتهي الصلاحية أو غير صحيح")
                         elif 'invalid_client' in error_description:
                             print("💡 App Key أو App Secret غير صحيح")
-                    except:
-                        print("🔍 لا يمكن تحليل تفاصيل الخطأ")
+                    except Exception as e:
+                        print(f"🔍 Cannot parse error details: {e}")
                 
                 return False
                 
@@ -142,7 +142,11 @@ class DropboxOAuthBackup:
                 # Users & Permissions tables
                 'users', 'pages', 'user_permissions',
                 # Logs table
-                'stock_logs'
+                'stock_logs',
+                # Snapshots table (for dashboard graphs)
+                'stock_snapshots',
+                # Barcode system
+                'barcodes'
             ]
             
             total_records = 0
@@ -296,7 +300,11 @@ class DropboxOAuthBackup:
                 # Users & Permissions
                 'pages', 'users', 'user_permissions',
                 # Logs
-                'stock_logs'
+                'stock_logs',
+                # Snapshots (for dashboard graphs)
+                'stock_snapshots',
+                # Barcode system
+                'barcodes'
             ]
             
             total_restored = 0
